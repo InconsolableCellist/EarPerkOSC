@@ -117,114 +117,70 @@ fn main() {
     println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
     println!("L: perk left ear, R: perk right ear, !L: reset left ear, !R: reset right ear\n\n");
 
+    let mut left_sum = 0.0;
+    let mut right_sum = 0.0;
+    let mut left_avg= 0.0;
+    let mut right_avg = 0.0;
+    let mut current_time = std::time::Instant::now();
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // analysis method 1
-            /*
-            for (i, &sample) in data.iter().enumerate() {
-                if sample.abs() > threshold {
-                    if i % 2 == 0 {
-                        // only fire every timeout ms
-                        if std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(timeout) {
-                            arguments[0] = OscType::Bool(true);
-                            print!("L");
-                            io::stdout().flush().unwrap();
-                            let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
-                            last_left_message_timestamp = std::time::Instant::now();
-                            left_perked = true;
-                        }
-                    } else {
-                        if std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(timeout) {
-                            arguments[0] = OscType::Bool(true);
-                            print!("R");
-                            io::stdout().flush().unwrap();
-                            let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
-                            last_right_message_timestamp = std::time::Instant::now();
-                            right_perked = true;
-                        }
-                    }
-                } else {
-                    // reset after reset_timeout ms
-                    if left_perked && std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(reset_timeout) {
-                        arguments[0] = OscType::Bool(false);
-                        print!("!L\n");
-                        io::stdout().flush().unwrap();
-                        let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
-                        left_perked = false;
-                    }
-                    if right_perked && std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(reset_timeout) {
-                        print!("!R\n");
-                        io::stdout().flush().unwrap();
-                        arguments[0] = OscType::Bool(false);
-                        let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
-                        right_perked = false;
-                    }
-                }
-            }
-             */
-
-            //analysis method 2
-            // iterate over every sample in the buffer and create an average of the left channel and right channel
-            let mut left_sum = 0.0;
-            let mut right_sum = 0.0;
+            left_sum = 0.0;
+            right_sum = 0.0;
             for (i, &sample) in data.iter().enumerate() {
                 if i % 2 == 0 {
-                    left_sum += sample;
+                    left_sum += sample.abs();
                 } else {
-                    right_sum += sample;
+                    right_sum += sample.abs();
                 }
             }
-            let left_avg = left_sum / (data.len() as f32 / 2.0);
-            let right_avg = right_sum / (data.len() as f32 / 2.0);
+            left_avg = left_sum / (data.len() as f32 / 2.0);
+            right_avg = right_sum / (data.len() as f32 / 2.0);
             // if the left is louder than the right by a threshold, perk the left ear
             // if the right is louder than the left by a threshold, perk the right ear
             // if the left and right are within the threshold of each other, perk both
             // if the left and right are below the threshold, reset both
+            current_time = std::time::Instant::now();
             if left_avg - right_avg > threshold {
-                if std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(timeout) {
+                if current_time - last_left_message_timestamp > Duration::from_millis(timeout) {
                     arguments[0] = OscType::Bool(true);
                     print!("L");
                     io::stdout().flush().unwrap();
                     let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
-                    last_left_message_timestamp = std::time::Instant::now();
+                    last_left_message_timestamp = current_time;
                     left_perked = true;
                 }
             } else if right_avg - left_avg > threshold {
-                if std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(timeout) {
+                if current_time - last_right_message_timestamp > Duration::from_millis(timeout) {
                     arguments[0] = OscType::Bool(true);
                     print!("R");
                     io::stdout().flush().unwrap();
                     let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
-                    last_right_message_timestamp = std::time::Instant::now();
+                    last_right_message_timestamp = current_time;
                     right_perked = true;
                 }
             } else if left_avg > threshold && right_avg > threshold {
-                if std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(timeout) {
+                if current_time - last_left_message_timestamp > Duration::from_millis(timeout) &&
+                    current_time - last_right_message_timestamp > Duration::from_millis(timeout) {
                     arguments[0] = OscType::Bool(true);
-                    print!("L");
+                    print!("B");
                     io::stdout().flush().unwrap();
                     let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
-                    last_left_message_timestamp = std::time::Instant::now();
+                    let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
+                    last_left_message_timestamp = current_time;
+                    last_right_message_timestamp = current_time;
                     left_perked = true;
-                }
-                if std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(timeout) {
-                    arguments[0] = OscType::Bool(true);
-                    print!("R");
-                    io::stdout().flush().unwrap();
-                    let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
-                    last_right_message_timestamp = std::time::Instant::now();
                     right_perked = true;
                 }
             } else {
-                if left_perked && std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(reset_timeout) {
+                if left_perked && current_time - last_left_message_timestamp > Duration::from_millis(reset_timeout) {
                     arguments[0] = OscType::Bool(false);
                     print!("!L\n");
                     io::stdout().flush().unwrap();
                     let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
                     left_perked = false;
                 }
-                if right_perked && std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(reset_timeout) {
+                if right_perked && current_time - last_right_message_timestamp > Duration::from_millis(reset_timeout) {
                     print!("!R\n");
                     io::stdout().flush().unwrap();
                     arguments[0] = OscType::Bool(false);
