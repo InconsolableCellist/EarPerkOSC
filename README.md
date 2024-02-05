@@ -1,13 +1,14 @@
 # 🎧 EarPerkOSC
 
-EarPerkOSC is a Rust application that listens to stereo audio from an input source and sends OSC messages to 
-make your VRChat avatar's ears perk. If a loud sound occurs on the left, the message to perk the left ear
-will be sent, same for the right, and same for both. After a delay (configurable), the message to unperk 
-them may be sent. Boolean VRCExpressionParameters are used to control the ear perking, and to only require two bits
+**EarPerkOSC** is a Rust application that listens to stereo audio from an input source and sends OSC messages to 
+make your VRChat avatar's ears perk. If a loud sound occurs mostly on your left side, the message to perk the left ear
+will be sent, same for the right, and same for audio that's close to the center.
+
+After a delay (configurable), the message to unperk your ears may be sent (if the sound has stopped). Boolean VRCExpressionParameters are used to control the ear perking, and to only require two bits
 of space in your parameters. (Floats may be a future improvement, for intensity of the perk and possibly directionality.)
 
 Audio is captured from a system device, such as [Voice Meeter's](https://vb-audio.com/Voicemeeter/) virtual 
-audio cable. This way the system's entire audio is considered when deciding which ear to perk. Capturing only the audio 
+audio cable. This way the system's entire audio is used when deciding which ear to perk. Capturing only the audio 
 from a specific application is a possible future improvement.
 
 ## 🛰️ OSC Configuration 
