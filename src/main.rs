@@ -17,7 +17,7 @@ fn send_osc_message(address: &str, arguments: &Vec<OscType>, target_address: Str
     let target = target_address.parse::<SocketAddr>().unwrap_or_else(|_| panic!("Could not parse target address"));
     let encoded_packet = rosc::encoder::encode(&packet).unwrap();
 
-    socket.send_to(encoded_packet.as_slice(), target).expect(return);
+    socket.send_to(encoded_packet.as_slice(), target).expect("Failed to send message");
 }
 
 

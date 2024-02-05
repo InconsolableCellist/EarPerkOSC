@@ -1,5 +1,5 @@
 [package]
-name = "EarPerkOSC"
+name = "ear_perk_osc"
 version = "1.0.0"
 edition = "2021"
 
