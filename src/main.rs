@@ -72,7 +72,7 @@ fn main() {
     let args_false = vec![OscType::Bool(false)];
 
     let host = cpal::default_host();
-    let mut devices = host.input_devices().unwrap();
+    let devices = host.input_devices().unwrap();
     let mut device_index: Option<usize> = None;
     let devices_vec: Vec<_> = devices.collect();
 
@@ -118,19 +118,18 @@ fn main() {
     println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
     println!("L: perk left ear, R: perk right ear, !L: reset left ear, !R: reset right ear\n\n");
 
-    let mut left_avg= 0.0;
-    let mut right_avg = 0.0;
-    let mut current_time = std::time::Instant::now();
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            let left_avg:f32;
+            let right_avg:f32;
             (left_avg, right_avg) = calculate_avg_lr(&data);
+            let current_time = std::time::Instant::now();
 
             // if the left is louder than the right by a threshold, perk the left ear
             // if the right is louder than the left by a threshold, perk the right ear
             // if the left and right are within the threshold of each other, perk both
             // if the left and right are below the threshold, reset both
-            current_time = std::time::Instant::now();
             if left_avg - right_avg > threshold {
                 if current_time - last_left_message_timestamp > timeout {
                     print!("L");
