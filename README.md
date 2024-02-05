@@ -1,16 +1,16 @@
-# EarPerkOSC
+# 🎧 EarPerkOSC
 
 EarPerkOSC is a Rust application that listens to stereo audio from an input source and sends OSC messages to 
 make your VRChat avatar's ears perk. If a loud sound occurs on the left, the message to perk the left ear
 will be sent, same for the right, and same for both. After a delay (configurable), the message to unperk 
-them will be sent. Boolean VRCExpressionParameters are used to control the ear perking, and to only require two bits
+them may be sent. Boolean VRCExpressionParameters are used to control the ear perking, and to only require two bits
 of space in your parameters. (Floats may be a future improvement, for intensity of the perk and possibly directionality.)
 
 Audio is captured from a system device, such as [Voice Meeter's](https://vb-audio.com/Voicemeeter/) virtual 
 audio cable. This way the system's entire audio is considered when deciding which ear to perk. Capturing only the audio 
 from a specific application is a possible future improvement.
 
-## OSC Configuration 
+## 🛰️ OSC Configuration 
 
 An OSC connection is made to 127.0.0.1:9000 by default, but if you're using other OSC applications
 with VRChat you **will** need to run a program like [VOR](https://github.com/SutekhVRC/VOR) to route the messages to VRChat.
@@ -26,21 +26,31 @@ both [VRCFT](https://github.com/benaclejames/VRCFT) and EarPerkOSC:
 | VRCFT | 9001 | 9101 |
 
 Note how VOR is configured to listen on new ports (9100 and 9101, chosen arbitrarily) and
-EarPerkOSC and VRCFT are configured to send to those ports.
+EarPerkOSC and VRCFT are configured to send to those ports. The purpose of this is to satisfy VRChat's
+desire to listen to one port, yet still provide multiple sources of OSC messages. Think of VOR as an OSC middle-man.
 
-## Avatar configuration
+## 🦊 Avatar configuration
 
 You'll need to modify your avatar to respond to updates to the avatar parameters. EarPerkLeft and EarPerkRight booleans
 at a minimum. You can use my template with [VRCFury](https://vrcfury.com/) to do this quite easily.
 
 My template is available on my Gumroad: https://foxipso.gumroad.com
 
-## config.ini
+If you're endeavoring to do this yourself, make animation files that perk and unperk your ears, then
+an animation controller that listens to the parameters you specified in the OSC address and animates them.
+You can perk and unperk the ears based on the messages without any delay or more than one keyframe in the animation clips.
+
+## ⚙️ config.ini
 
 Your `config.ini` file will automatically be created when you run the binary for the first time.
-Here's an explanation of the configurable parameters:
+Here's a complete config.ini file an explanation of the configurable parameters:
 
 ```ini
+encoding=utf-8
+
+[version]
+version=1.0
+
 [connection]
 address=127.0.0.1
 port=9000
@@ -64,11 +74,11 @@ buffer_size_ms=100
 * `timeout_ms` is the time in milliseconds to wait before trying to perk that ear again
 * `buffer_size_ms` is the size of the buffer in milliseconds. This is the amount of audio data that'll be averaged together before being processed.
 
-The important configuration parameters for most setups are `port`, `input_device`, and to a lesser extent `differential_threshold`, though
+**The important configuration parameters** for most setups are `port`, `input_device`, and to a lesser extent `differential_threshold`, though
 the default value works just fine for me.
 
 
-## Installation
+## 💾 Installation
 
 Download the provided latest release, extract it to a directory, and run `EarPerkOSC.exe`. If you need to make
 configuration changes, open the newly created `config.ini` file. 
@@ -90,22 +100,22 @@ You'll see explanatory text in the program's console output. As audio is process
 `!R`: OSC Message sent to the right ear address, as a False, to unperk the ear
 
 
-## Building 
+## 🛠️ Building 
 
 1. Clone the repository
 2. Navigate to the project directory
 3. Run `cargo build` to build the project
 4. Run `cargo run` to start the application
 
-## Support
+## 🤝 Support
 
 For support, please visit [foxipso.com](http://foxipso.com)
 
-## Version History 
+## 📅 Version History 
 
 1.0.0 - Initial release
 
 
-## License
+## ⚖️ License
 
 This project is licensed under the ???
