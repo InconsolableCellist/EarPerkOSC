@@ -6,18 +6,18 @@ extern crate rosc;
 use rosc::{OscPacket, OscType, OscMessage, OscBundle};
 use std::net::{UdpSocket, SocketAddr};
 use ini::Ini;
-fn send_osc_message(address: &str, arguments: Vec<OscType>, target_address: String) -> Result<(), std::io::Error> {
+fn send_osc_message(address: &str, arguments: &Vec<OscType>, target_address: String) {
     let message = OscMessage {
         addr: address.to_string(),
-        args: arguments
+        args: arguments.clone()
     };
 
     let packet = OscPacket::Message(message);
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    let target = SocketAddr::from(([127, 0, 0, 1], 9000));
+    let socket = UdpSocket::bind("0.0.0.0:0").unwrap_or_else(|_| panic!("Could not bind to address"));
+    let target = target_address.parse::<SocketAddr>().unwrap_or_else(|_| panic!("Could not parse target address"));
+    let encoded_packet = rosc::encoder::encode(&packet).unwrap();
 
-    socket.send_to(rosc::encoder::encode(&packet).unwrap().as_slice(), target)?;
-    Ok(())
+    socket.send_to(encoded_packet.as_slice(), target).expect(return);
 }
 
 
@@ -36,7 +36,7 @@ fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
         .set("osc_address_right", "/avatar/parameters/EarPerkRight");
     config.with_section(Some("audio"))
         .set("input_device", "CABLE Output (VB-Audio Virtual Cable)")
-        .set("threshold", "0.3")
+        .set("differential_threshold", "0.01")
         .set("reset_timeout_ms", "1000")
         .set("timeout_ms", "100")
         .set("buffer_size_ms", "100");
@@ -68,7 +68,8 @@ fn print_banner() {
 }
 
 fn main() {
-    let mut arguments = vec![OscType::Bool(true)];
+    let args_true = vec![OscType::Bool(true)];
+    let args_false = vec![OscType::Bool(false)];
 
     let host = cpal::default_host();
     let mut devices = host.input_devices().unwrap();
@@ -85,9 +86,9 @@ fn main() {
     let address_left = config.section(Some("connection")).unwrap().get("osc_address_left").unwrap().to_owned();
     let address_right = config.section(Some("connection")).unwrap().get("osc_address_right").unwrap().to_owned();
     let target_address = format!("{}:{}", config.section(Some("connection")).unwrap().get("address").unwrap(), config.section(Some("connection")).unwrap().get("port").unwrap());
-    let threshold = config.section(Some("audio")).unwrap().get("threshold").unwrap().parse::<f32>().unwrap();
-    let reset_timeout = config.section(Some("audio")).unwrap().get("reset_timeout_ms").unwrap().parse::<u64>().unwrap();
-    let timeout = config.section(Some("audio")).unwrap().get("timeout_ms").unwrap().parse::<u64>().unwrap();
+    let threshold = config.section(Some("audio")).unwrap().get("differential_threshold").unwrap().parse::<f32>().unwrap();
+    let reset_timeout = Duration::from_millis(config.section(Some("audio")).unwrap().get("reset_timeout_ms").unwrap().parse::<u64>().unwrap());
+    let timeout = Duration::from_millis(config.section(Some("audio")).unwrap().get("timeout_ms").unwrap().parse::<u64>().unwrap());
     let buffer_size_ms = config.section(Some("audio")).unwrap().get("buffer_size_ms").unwrap().parse::<u64>().unwrap();
 
     print_banner();
@@ -117,77 +118,57 @@ fn main() {
     println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
     println!("L: perk left ear, R: perk right ear, !L: reset left ear, !R: reset right ear\n\n");
 
-    let mut left_sum = 0.0;
-    let mut right_sum = 0.0;
     let mut left_avg= 0.0;
     let mut right_avg = 0.0;
     let mut current_time = std::time::Instant::now();
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            left_sum = 0.0;
-            right_sum = 0.0;
-            for (i, &sample) in data.iter().enumerate() {
-                if i % 2 == 0 {
-                    left_sum += sample.abs();
-                } else {
-                    right_sum += sample.abs();
-                }
-            }
-            left_avg = left_sum / (data.len() as f32 / 2.0);
-            right_avg = right_sum / (data.len() as f32 / 2.0);
+            (left_avg, right_avg) = calculate_avg_lr(&data);
+
             // if the left is louder than the right by a threshold, perk the left ear
             // if the right is louder than the left by a threshold, perk the right ear
             // if the left and right are within the threshold of each other, perk both
             // if the left and right are below the threshold, reset both
             current_time = std::time::Instant::now();
             if left_avg - right_avg > threshold {
-                if current_time - last_left_message_timestamp > Duration::from_millis(timeout) {
-                    arguments[0] = OscType::Bool(true);
+                if current_time - last_left_message_timestamp > timeout {
                     print!("L");
-                    io::stdout().flush().unwrap();
-                    let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
+                    send_osc_message(&address_left, &args_true, target_address.clone());
                     last_left_message_timestamp = current_time;
                     left_perked = true;
                 }
             } else if right_avg - left_avg > threshold {
-                if current_time - last_right_message_timestamp > Duration::from_millis(timeout) {
-                    arguments[0] = OscType::Bool(true);
+                if current_time - last_right_message_timestamp > timeout {
                     print!("R");
-                    io::stdout().flush().unwrap();
-                    let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
+                    send_osc_message(&address_right, &args_true, target_address.clone());
                     last_right_message_timestamp = current_time;
                     right_perked = true;
                 }
             } else if left_avg > threshold && right_avg > threshold {
-                if current_time - last_left_message_timestamp > Duration::from_millis(timeout) &&
-                    current_time - last_right_message_timestamp > Duration::from_millis(timeout) {
-                    arguments[0] = OscType::Bool(true);
+                if current_time - last_left_message_timestamp > timeout &&
+                    current_time - last_right_message_timestamp > timeout {
                     print!("B");
-                    io::stdout().flush().unwrap();
-                    let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
-                    let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
+                    send_osc_message(&address_left, &args_true, target_address.clone());
+                    send_osc_message(&address_right, &args_true, target_address.clone());
                     last_left_message_timestamp = current_time;
                     last_right_message_timestamp = current_time;
                     left_perked = true;
                     right_perked = true;
                 }
             } else {
-                if left_perked && current_time - last_left_message_timestamp > Duration::from_millis(reset_timeout) {
-                    arguments[0] = OscType::Bool(false);
+                if left_perked && current_time - last_left_message_timestamp > reset_timeout {
                     print!("!L\n");
-                    io::stdout().flush().unwrap();
-                    let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
+                    send_osc_message(&address_left, &args_false, target_address.clone());
                     left_perked = false;
                 }
-                if right_perked && current_time - last_right_message_timestamp > Duration::from_millis(reset_timeout) {
+                if right_perked && current_time - last_right_message_timestamp > reset_timeout {
                     print!("!R\n");
-                    io::stdout().flush().unwrap();
-                    arguments[0] = OscType::Bool(false);
-                    let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
+                    send_osc_message(&address_right, &args_false, target_address.clone());
                     right_perked = false;
                 }
             }
+            io::stdout().flush().unwrap();
         },
         move |err| {
             eprintln!("an error occurred on stream: {}", err);
@@ -200,4 +181,17 @@ fn main() {
     // The stream is stopped when it is dropped.
     // To keep it playing, we park the thread here.
     std::thread::park();
+}
+
+fn calculate_avg_lr(data: &[f32]) -> (f32, f32) {
+    let mut left_sum = 0.0;
+    let mut right_sum = 0.0;
+    for (i, &sample) in data.iter().enumerate() {
+        if i % 2 == 0 {
+            left_sum += sample.abs();
+        } else {
+            right_sum += sample.abs();
+        }
+    }
+    (left_sum / (data.len() as f32/2.0), right_sum / (data.len() as f32/2.0))
 }
