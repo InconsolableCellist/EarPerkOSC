@@ -116,7 +116,7 @@ fn main() {
     let config = device.default_input_config().expect("Failed to get default input config");
     println!("\nDefault input config: {:?}", config);
     println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
-    println!("L: perk left ear, R: perk right ear, !L: reset left ear, !R: reset right ear\n\n");
+    println!("L: perk left ear, R: perk right ear, B: perk both ears, !L: reset left ear, !R: reset right ear\n\n");
 
     let stream = device.build_input_stream(
         &config.into(),
