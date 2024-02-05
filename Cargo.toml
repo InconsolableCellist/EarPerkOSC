@@ -1,0 +1,12 @@
+[package]
+name = "EarPerkOSC"
+version = "1.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# add wasapi dep 0.14.0
+[dependencies]
+cpal = "0.15.2"
+rosc = "0.10.1"
+rust-ini = "0.20.0"
