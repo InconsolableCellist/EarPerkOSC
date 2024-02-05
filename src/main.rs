@@ -1,9 +1,9 @@
 use std::io;
-use std::io::{stdin, stdout, Write};
+use std::io::{Write};
 use std::time::Duration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 extern crate rosc;
-use rosc::{OscPacket, OscType, OscMessage, OscBundle};
+use rosc::{OscPacket, OscType, OscMessage};
 use std::net::{UdpSocket, SocketAddr};
 use ini::Ini;
 fn send_osc_message(address: &str, arguments: &Vec<OscType>, target_address: String) {
