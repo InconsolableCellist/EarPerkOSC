@@ -1,3 +1,4 @@
+use std::io;
 use std::io::{stdin, stdout, Write};
 use std::time::Duration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -34,7 +35,11 @@ fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
         .set("osc_address_left", "/avatar/parameters/EarPerkLeft")
         .set("osc_address_right", "/avatar/parameters/EarPerkRight");
     config.with_section(Some("audio"))
-        .set("input_device", "CABLE Output (VB-Audio Virtual Cable)");
+        .set("input_device", "CABLE Output (VB-Audio Virtual Cable)")
+        .set("threshold", "0.3")
+        .set("reset_timeout_ms", "1000")
+        .set("timeout_ms", "100")
+        .set("buffer_size_ms", "100");
     config.write_to_file("config.ini").unwrap();
     Ok(())
 }
@@ -48,43 +53,19 @@ fn read_config_ini() -> Result<ini::Ini, ini::Error> {
 fn print_devices() {
     let host = cpal::default_host();
     let devices = host.input_devices().unwrap();
+    println!("----");
     for (device_index, device) in devices.enumerate() {
         println!("Device {}: {:?}", device_index, device.name().unwrap())
     }
+    println!("----");
 }
 
-/*
-fn receive_osc_message() -> Result<(), std::io::Error> {
-    let socket = UdpSocket::bind("0.0.0.0:12345")?;
-    let mut buf = [0; 1024];
-
-    loop {
-        let (size, _) = socket.recv_from(&mut buf)?;
-        let packet = rosc::decoder::decode_udp(&buf[..size]);
-
-        match packet {
-            Ok(osc_packet) => {
-                match osc_packet {
-                    OscPacket::Message(msg) => {
-                        println!("Received OSC message: {:?}", msg);
-                    }
-                    OscPacket::Bundle(bundle) => {
-                        for msg in bundle.content {
-                            if let OscPacket::Message(inner_msg) = msg {
-                                println!("Received OSC message from bundle: {:?}", inner_msg);
-                            }
-                        }
-                    }
-                }
-            },
-            Err(e) => {
-                eprintln!("Error decoding OSC packet: {}", e);
-            }
-        }
-
-    }
+fn print_banner() {
+    println!("EarPerkOSC v1.0");
+    println!("By Foxipso");
+    println!("Support: foxipso.com");
+    println!("Press Ctrl+C to exit\n");
 }
-*/
 
 fn main() {
     let mut arguments = vec![OscType::Bool(true)];
@@ -104,8 +85,12 @@ fn main() {
     let address_left = config.section(Some("connection")).unwrap().get("osc_address_left").unwrap().to_owned();
     let address_right = config.section(Some("connection")).unwrap().get("osc_address_right").unwrap().to_owned();
     let target_address = format!("{}:{}", config.section(Some("connection")).unwrap().get("address").unwrap(), config.section(Some("connection")).unwrap().get("port").unwrap());
+    let threshold = config.section(Some("audio")).unwrap().get("threshold").unwrap().parse::<f32>().unwrap();
+    let reset_timeout = config.section(Some("audio")).unwrap().get("reset_timeout_ms").unwrap().parse::<u64>().unwrap();
+    let timeout = config.section(Some("audio")).unwrap().get("timeout_ms").unwrap().parse::<u64>().unwrap();
+    let buffer_size_ms = config.section(Some("audio")).unwrap().get("buffer_size_ms").unwrap().parse::<u64>().unwrap();
 
-
+    print_banner();
     print_devices();
 
     let mut iter = 0;
@@ -124,63 +109,53 @@ fn main() {
     let device = if let Some(index) = device_index {
         devices_vec.get(index).expect("Failed to get device.")
     } else {
-        for (device_index, device) in host.input_devices().unwrap().enumerate() {
-            println!("Device {}: {:?}", device_index, device.name().unwrap())
-        }
-        let mut input = String::new();
-        print!("Select device: ");
-        stdout().flush().unwrap();
-        stdin().read_line(&mut input).unwrap();
-        let device_index: usize = input.trim().parse().unwrap();
-
-        devices_vec.get(device_index).expect("Failed to get device.")
+        devices_vec.first().expect("Failed to get device.")
     };
 
     let config = device.default_input_config().expect("Failed to get default input config");
-    println!("Default input config: {:?}", config);
+    println!("\nDefault input config: {:?}", config);
+    println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
+    println!("L: perk left ear, R: perk right ear, !L: reset left ear, !R: reset right ear\n\n");
 
     let stream = device.build_input_stream(
         &config.into(),
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            let threshold = 0.3;
             for (i, &sample) in data.iter().enumerate() {
                 if sample.abs() > threshold {
                     if i % 2 == 0 {
-                        if std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(100) {
+                        // only fire every timeout ms
+                        if std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(timeout) {
                             arguments[0] = OscType::Bool(true);
-                            println!("L");
-                            if let Err(e) = send_osc_message(&address_left, arguments.clone(), target_address.clone()) {
-                                eprintln!("Error sending OSC message: {}", e);
-                            }
+                            print!("L");
+                            io::stdout().flush().unwrap();
+                            let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
                             last_left_message_timestamp = std::time::Instant::now();
                             left_perked = true;
                         }
                     } else {
-                        if std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(100) {
+                        if std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(timeout) {
                             arguments[0] = OscType::Bool(true);
-                            println!("R");
-                            if let Err(e) = send_osc_message(&address_right, arguments.clone(), target_address.clone()) {
-                                eprintln!("Error sending OSC message: {}", e);
-                            }
+                            print!("R");
+                            io::stdout().flush().unwrap();
+                            let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
                             last_right_message_timestamp = std::time::Instant::now();
                             right_perked = true;
                         }
                     }
                 } else {
-                    if left_perked && std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(1000) {
+                    // reset after reset_timeout ms
+                    if left_perked && std::time::Instant::now() - last_left_message_timestamp > Duration::from_millis(reset_timeout) {
                         arguments[0] = OscType::Bool(false);
-                        println!("!L");
-                        if let Err(e) = send_osc_message(&address_left, arguments.clone(), target_address.clone()) {
-                            eprintln!("Error sending OSC message: {}", e);
-                        }
+                        print!("!L\n");
+                        io::stdout().flush().unwrap();
+                        let _ = send_osc_message(&address_left, arguments.clone(), target_address.clone());
                         left_perked = false;
                     }
-                    if right_perked && std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(1000) {
-                        println!("!R");
+                    if right_perked && std::time::Instant::now() - last_right_message_timestamp > Duration::from_millis(reset_timeout) {
+                        print!("!R\n");
+                        io::stdout().flush().unwrap();
                         arguments[0] = OscType::Bool(false);
-                        if let Err(e) = send_osc_message(&address_right, arguments.clone(), target_address.clone()) {
-                            eprintln!("Error sending OSC message: {}", e);
-                        }
+                        let _ = send_osc_message(&address_right, arguments.clone(), target_address.clone());
                         right_perked = false;
                     }
                 }
@@ -189,7 +164,7 @@ fn main() {
         move |err| {
             eprintln!("an error occurred on stream: {}", err);
         },
-        Some(Duration::from_millis(500)),
+        Some(Duration::from_millis(buffer_size_ms)),
     ).unwrap();
 
     stream.play().unwrap();
