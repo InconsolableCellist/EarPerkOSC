@@ -49,7 +49,6 @@ fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
         .set("osc_address_right", "/avatar/parameters/EarPerkRight")
         .set("osc_address_overwhelmingly_loud", "/avatar/parameters/EarOverwhelm");
     config.with_section(Some("audio"))
-        .set("input_device", "CABLE Output (VB-Audio Virtual Cable)")
         .set("differential_threshold", "0.01")
         .set("volume_threshold", "0.1")
         .set("excessive_volume_threshold", "0.4")
@@ -141,9 +140,6 @@ fn main() {
         // Dereference the pointer to get the WAVEFORMATEX structure
         let wave_format = *wave_format_ptr;
         print_wave_format_information(wave_format);
-        // let sample_rate = wave_format.nSamplesPerSec;
-        // let buffer_size_s = buffer_size_ms as f32 / 1000.0;
-        // let mut num_frames = (sample_rate as f32 * buffer_size_s) as u32;
 
         // Initialize the audio client for loopback capture
         (*audio_client).Initialize(
@@ -337,7 +333,6 @@ fn process_vol_overwhelm(args_true: &Vec<OscType>, args_false: &Vec<OscType>, ad
 }
 
 fn print_wave_format_information(wave_format: WAVEFORMATEX) {
-// Copy fields to local variables
     let format_tag = wave_format.wFormatTag;
     let channels = wave_format.nChannels;
     let samples_per_sec = wave_format.nSamplesPerSec;

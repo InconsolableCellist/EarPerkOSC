@@ -52,23 +52,23 @@ address=127.0.0.1
 port=9000
 osc_address_left=/avatar/parameters/EarPerkLeft
 osc_address_right=/avatar/parameters/EarPerkRight
+osc_address_overwhelmingly_loud=/avatar/parameters/EarOverwhelm
 
 [audio]
-input_device=CABLE Output (VB-Audio Virtual Cable)
 differential_threshold=0.01
-reset_timeout_ms=1000
+volume_threshold=0.1
+excessive_volume_threshold=0.4
+reset_timeout_ms=500
 timeout_ms=100
-buffer_size_ms=100
 ```
 
-* `address` and `port` are the address and port of the OSC server you're sending to (VRChat or VOR)
+* `address` and `port` are the address and port of the OSC server you're sending to (VRChat)
 
-* `osc_address_left` and `osc_address_right` are the OSC addresses for the left and right ear parameters on your avatar. You shouldn't need to change these, but they correspond to your VRCExpressionParameter entries
-*  `input_device` is the name of the audio device you want to capture. You can find this by running the program and looking at the output.
+* `osc_address_left` and `osc_address_right` are the OSC addresses for the left and right ear parameters on your avatar.
+* `osc_address_overwhelmingly_loud` is the OSC address for the "overwhelmingly loud" parameter. This is used to fold your ears back when the audio is too loud.
 * `differential_threshold` is the minimum difference between the left and right channels to trigger a left or right-only ear perk.
-* `reset_timeout_ms` is the time in milliseconds to wait after the last sound before sending the unperk message, if applicable.
-* `timeout_ms` is the time in milliseconds to wait before trying to perk that ear again
-* `buffer_size_ms` is the size of the buffer in milliseconds. This is the amount of audio data that'll be averaged together before being processed.
+* `reset_timeout_ms` is the time in milliseconds to wait after the last sound before sending the unperk message, if applicable. Low values will make your ears twitchy.
+* `timeout_ms` is the delay in milliseconds to wait before trying to perk that ear again
 
 **The important configuration parameters** for most setups are `port`, `input_device`, and to a lesser extent `differential_threshold`, though
 the default value works just fine for me.
@@ -78,10 +78,6 @@ the default value works just fine for me.
 
 Download the provided latest release, extract it to a directory, and run `EarPerkOSC.exe`. If you need to make
 configuration changes, open the newly created `config.ini` file. 
-
-Unless you're using Voice Meeter, you'll need to change which audio device is captured. 
-Look at the output in the console and find the name of the device you want to capture. Place
-that in the config.ini. See the Configuration Section for more details.
 
 You'll see explanatory text in the program's console output. As audio is processed and messages are sent, you'll see the following:
 
@@ -95,6 +91,9 @@ You'll see explanatory text in the program's console output. As audio is process
 
 `!R`: OSC Message sent to the right ear address, as a False, to unperk the ear
 
+`O`: OSC Message sent to the "overwhelmingly loud" address, as a True
+
+`!O`: OSC Message sent to the "overwhelmingly loud" address, as a False
 
 ## 🛠️ Building 
 
