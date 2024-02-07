@@ -70,7 +70,7 @@ timeout_ms=100
 * `reset_timeout_ms` is the time in milliseconds to wait after the last sound before sending the unperk message, if applicable. Low values will make your ears twitchy.
 * `timeout_ms` is the delay in milliseconds to wait before trying to perk that ear again
 
-The important configuration parameters are `volume_threshold`, `excessive_volume_threshold`, though the default values should work fine.
+Important configuration parameters are `volume_threshold` and `excessive_volume_threshold`, though the default values should work fine.
 
 
 ## 💾 Installation
