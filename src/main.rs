@@ -1,7 +1,6 @@
 use std::io;
 use std::io::{Write};
 use std::time::{Duration, Instant};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 extern crate rosc;
 use rosc::{OscPacket, OscType, OscMessage};
 use std::net::{UdpSocket, SocketAddr};
@@ -17,7 +16,7 @@ use winapi::{Class, Interface};
 use winapi::um::audioclient::*;
 use winapi::um::mmdeviceapi::*;
 use winapi::um::combaseapi::*;
-use winapi::shared::mmreg::{WAVE_FORMAT_EXTENSIBLE, WAVEFORMATEX, WAVEFORMATEXTENSIBLE};
+use winapi::shared::mmreg::WAVEFORMATEX;
 use winapi::um::audiosessiontypes::{AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK};
 
 fn send_osc_message(address: &str, arguments: &Vec<OscType>, target_address: String) {
@@ -64,16 +63,6 @@ fn read_config_ini() -> Result<ini::Ini, ini::Error> {
     create_config_ini_if_not_exists().unwrap();
     let config = Ini::load_from_file("config.ini")?;
     Ok(config)
-}
-
-fn print_devices() {
-    let host = cpal::default_host();
-    let devices = host.input_devices().unwrap();
-    println!("----");
-    for (device_index, device) in devices.enumerate() {
-        println!("Device {}: {:?}", device_index, device.name().unwrap())
-    }
-    println!("----");
 }
 
 fn print_banner() {
@@ -151,7 +140,7 @@ fn main() {
 
         // Dereference the pointer to get the WAVEFORMATEX structure
         let wave_format = *wave_format_ptr;
-        print_wave_format_information(&mut wave_format_ptr, wave_format);
+        print_wave_format_information(wave_format);
         // let sample_rate = wave_format.nSamplesPerSec;
         // let buffer_size_s = buffer_size_ms as f32 / 1000.0;
         // let mut num_frames = (sample_rate as f32 * buffer_size_s) as u32;
@@ -182,7 +171,6 @@ fn main() {
         // Start the audio stream
         (*audio_client).Start();
 
-        let mut start = std::time::Instant::now();
         loop {
             if !running.load(Ordering::SeqCst) {
                 break;
@@ -206,7 +194,7 @@ fn main() {
                 let samples = std::slice::from_raw_parts(buffer as *const f32, frames_available as usize);
                 let left_avg:f32;
                 let right_avg:f32;
-                (left_avg, right_avg) = calculate_avg_lr_new(&samples);
+                (left_avg, right_avg) = calculate_avg_lr(&samples);
                 let current_time = std::time::Instant::now();
 
                 // Fold both ears if the volume is overwhelmingly loud (exceeding `excessive_volume_threshold`). Also
@@ -348,7 +336,7 @@ fn process_vol_overwhelm(args_true: &Vec<OscType>, args_false: &Vec<OscType>, ad
     }
 }
 
-fn print_wave_format_information(wave_format_ptr: &mut *mut WAVEFORMATEX, wave_format: WAVEFORMATEX) {
+fn print_wave_format_information(wave_format: WAVEFORMATEX) {
 // Copy fields to local variables
     let format_tag = wave_format.wFormatTag;
     let channels = wave_format.nChannels;
@@ -368,20 +356,7 @@ fn print_wave_format_information(wave_format_ptr: &mut *mut WAVEFORMATEX, wave_f
     println!("Extra Info Size: {}", extra_info_size);
 }
 
-fn calculate_avg_lr(data: &[f32]) -> (f32, f32) {
-    let mut left_sum = 0.0;
-    let mut right_sum = 0.0;
-    for (i, &sample) in data.iter().enumerate() {
-        if i % 2 == 0 {
-            left_sum += sample.abs();
-        } else {
-            right_sum += sample.abs();
-        }
-    }
-    (left_sum / (data.len() as f32/2.0), right_sum / (data.len() as f32/2.0))
-}
-
-fn calculate_avg_lr_new(samples: &[f32]) -> (f32, f32) {
+fn calculate_avg_lr(samples: &[f32]) -> (f32, f32) {
     let mut left_volume = 0.0;
     let mut right_volume = 0.0;
     let mut count = 0;
