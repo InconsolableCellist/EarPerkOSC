@@ -2,33 +2,21 @@
 
 **EarPerkOSC** is a Rust application that listens to stereo audio from an input source and sends OSC messages to 
 make your VRChat avatar's ears perk. If a loud sound occurs mostly on your left side, the message to perk the left ear
-will be sent, same for the right, and same for audio that's close to the center.
+will be sent, same for the right, and same for audio that's close to the center. If the audio is especially loud, your ears
+can also fold back protectively!
 
-After a delay (configurable), the message to unperk your ears may be sent (if the sound has stopped). Boolean VRCExpressionParameters are used to control the ear perking, and to only require two bits
-of space in your parameters. (Floats may be a future improvement, for intensity of the perk and possibly directionality.)
+After a delay (configurable), the message to unperk your ears may be sent (if the sound has stopped). Boolean VRCExpressionParameters are used to 
+control the ear perking, and to only require 2 to 4 bits of space in your parameters. 
+(Floats may be a future improvement, for intensity of the perk and possibly directionality.)
 
-Audio is captured from a system device, such as [Voice Meeter's](https://vb-audio.com/Voicemeeter/) virtual 
-audio cable. This way the system's entire audio is used when deciding which ear to perk. Capturing only the audio 
-from a specific application is a possible future improvement.
+Audio is captured from your system's audio as a loopback device--so anything you hear, your avatar will react to. (Including Discord/Telegram
+notification pings.)
 
 ## 🛰️ OSC Configuration 
 
-An OSC connection is made to 127.0.0.1:9000 by default, but if you're using other OSC applications
-with VRChat you **will** need to run a program like [VOR](https://github.com/SutekhVRC/VOR) to route the messages to VRChat.
-Configuration is quite simple in that case. Here's what your VOR configuration might look like when using
-both [VRCFT](https://github.com/benaclejames/VRCFT) and EarPerkOSC:
+An OSC connection is made to 127.0.0.1:9000 by default. If for some reason you need a custom endpoint, you can configure it in the config.ini file.
 
-| App | Listening Port | Sending Port |
-| --- | --------------- | ------------ |
-| VRChat | 9000 | 9001 | 
-| VOR - EarPerkOSC | 9100 | 9001 |
-| VOR - VRCFT | 9101 | 9001 | 
-| EarPerkOSC | -- | 9100 | 
-| VRCFT | 9001 | 9101 |
-
-Note how VOR is configured to listen on new ports (9100 and 9101, chosen arbitrarily) and
-EarPerkOSC and VRCFT are configured to send to those ports. The purpose of this is to satisfy VRChat's
-desire to listen to one port, yet still provide multiple sources of OSC messages. Think of VOR as an OSC middle-man.
+**EarPerkOSC** works with other OSC applications, like [VRCFT](https://github.com/benaclejames/VRCFaceTracking) and it doesn't require any special OSC routing.
 
 ## 🦊 Avatar configuration
 
@@ -37,9 +25,16 @@ at a minimum. You can use my template with [VRCFury](https://vrcfury.com/) to do
 
 My template is available on my Gumroad: https://foxipso.gumroad.com
 
-If you're endeavoring to do this yourself, make animation files that perk and unperk your ears, then
-an animation controller that listens to the parameters you specified in the OSC address and animates them.
-You can perk and unperk the ears based on the messages without any delay or more than one keyframe in the animation clips.
+If you're endeavoring to do this yourself, make the following animation files:
+
+* Ear Left Perk
+* Ear Left Neutral
+* Ear Right Perk
+* Ear Right Neutral
+* Both Ears Fold
+
+Then create an animation controller using the avatar parameters as floats (they're bools in the VRCExpressionParameters, but you use them as if they were floats).
+You can animate them using direct and 1D blend trees. The animation clips don't need more than one keyframe.
 
 ## ⚙️ config.ini
 
