@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{Write};
+use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 extern crate rosc;
 use rosc::{OscPacket, OscType, OscMessage};
@@ -7,10 +7,10 @@ use std::net::{UdpSocket, SocketAddr};
 use ini::Ini;
 use ms_dtyp;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 extern crate winapi;
-use std::ptr::null_mut;
+use std::ptr::{NonNull, null_mut};
 use ms_dtyp::{BYTE, DWORD};
 use winapi::{Class, Interface};
 use winapi::um::audioclient::*;
@@ -18,6 +18,33 @@ use winapi::um::mmdeviceapi::*;
 use winapi::um::combaseapi::*;
 use winapi::shared::mmreg::WAVEFORMATEX;
 use winapi::um::audiosessiontypes::{AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK};
+use winapi::um::consoleapi::SetConsoleCtrlHandler;
+use winapi::um::wincon::CTRL_CLOSE_EVENT;
+
+struct CleanupResources {
+    capture_client: Mutex<NonNull<IAudioCaptureClient>>,
+    audio_client: Mutex<NonNull<IAudioClient>>,
+    device: Mutex<NonNull<IMMDevice>>,
+    device_enumerator: Mutex<NonNull<IMMDeviceEnumerator>>,
+}
+
+unsafe impl Send for CleanupResources {}
+unsafe impl Sync for CleanupResources {}
+
+lazy_static::lazy_static! {
+    static ref CLEANUP_RESOURCES: Arc<Mutex<Option<CleanupResources>>> = Arc::new(Mutex::new(None));
+}
+
+unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> i32 {
+    match ctrl_type {
+        CTRL_CLOSE_EVENT => {
+            println!("Exiting...");
+            cleanup();
+            1
+        }
+        _ => 0,
+    }
+}
 
 fn send_osc_message(address: &str, arguments: &Vec<OscType>, target_address: String) {
     let message = OscMessage {
@@ -50,9 +77,9 @@ fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
         .set("osc_address_overwhelmingly_loud", "/avatar/parameters/EarOverwhelm");
     config.with_section(Some("audio"))
         .set("differential_threshold", "0.01")
-        .set("volume_threshold", "0.1")
-        .set("excessive_volume_threshold", "0.4")
-        .set("reset_timeout_ms", "500")
+        .set("volume_threshold", "0.2")
+        .set("excessive_volume_threshold", "0.5")
+        .set("reset_timeout_ms", "1000")
         .set("timeout_ms", "100");
     config.write_to_file("config.ini").unwrap();
     Ok(())
@@ -71,7 +98,34 @@ fn print_banner() {
     println!("Press Ctrl+C to exit\n");
 }
 
+fn cleanup() {
+    let maybe_resources = CLEANUP_RESOURCES.lock().unwrap().take();
+    if let Some(resources) = maybe_resources {
+        unsafe {
+            // Use `as_ref` to convert the raw pointer to a reference.
+            // This is unsafe because it assumes the pointer is valid and properly aligned.
+            let capture_client = &*resources.capture_client.lock().unwrap().as_ptr();
+            let audio_client = &*resources.audio_client.lock().unwrap().as_ptr();
+            let device = &*resources.device.lock().unwrap().as_ptr();
+            let device_enumerator = &*resources.device_enumerator.lock().unwrap().as_ptr();
+
+            // Directly call the Release method on the reference.
+            // These calls are still unsafe, as you're assuming the COM contract is upheld.
+            capture_client.Release();
+            audio_client.Release();
+            device.Release();
+            device_enumerator.Release();
+
+            CoUninitialize();
+        }
+    }
+
+}
+
 fn main() {
+    unsafe {
+        SetConsoleCtrlHandler(Some(ctrl_handler), 1);
+    }
     let args_true = vec![OscType::Bool(true)];
     let args_false = vec![OscType::Bool(false)];
 
@@ -167,6 +221,15 @@ fn main() {
         // Start the audio stream
         (*audio_client).Start();
 
+        let resources = CleanupResources {
+            capture_client: Mutex::new(NonNull::new(capture_client).unwrap()),
+            audio_client: Mutex::new(NonNull::new(audio_client).unwrap()),
+            device: Mutex::new(NonNull::new(device).unwrap()),
+            device_enumerator: Mutex::new(NonNull::new(device_enumerator).unwrap()),
+        };
+
+        *CLEANUP_RESOURCES.lock().unwrap() = Some(resources);
+
         loop {
             if !running.load(Ordering::SeqCst) {
                 break;
@@ -219,13 +282,8 @@ fn main() {
         if !wave_format_ptr.is_null() {
             CoTaskMemFree(wave_format_ptr as *mut _);
         }
-        (*capture_client).Release();
-        (*audio_client).Release();
-        (*device).Release();
-        (*device_enumerator).Release();
 
-        CoUninitialize();
-
+        cleanup();
     }
 }
 

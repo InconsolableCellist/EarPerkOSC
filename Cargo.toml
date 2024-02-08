@@ -7,8 +7,9 @@ edition = "2021"
 
 # add wasapi dep 0.14.0
 [dependencies]
-winapi = { version = "0.3.9", features = ["audioclient", "mmdeviceapi", "combaseapi", "mmreg", "audiosessiontypes"] }
+winapi = { version = "0.3.9", features = ["audioclient", "mmdeviceapi", "combaseapi", "mmreg", "audiosessiontypes", "consoleapi", "wincon"] }
 ms_dtyp = "0.0.3"
 rosc = "0.10.1"
 rust-ini = "0.20.0"
 ctrlc = "3.4.2"
+lazy_static = "1.4.0"
