@@ -56,9 +56,9 @@ osc_address_overwhelmingly_loud=/avatar/parameters/EarOverwhelm
 
 [audio]
 differential_threshold=0.01
-volume_threshold=0.1
-excessive_volume_threshold=0.4
-reset_timeout_ms=500
+volume_threshold=0.2
+excessive_volume_threshold=0.5
+reset_timeout_ms=1000
 timeout_ms=100
 ```
 
