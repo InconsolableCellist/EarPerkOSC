@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::{Duration, Instant};
 extern crate rosc;
 use rosc::{OscPacket, OscType, OscMessage};
@@ -7,10 +7,9 @@ use std::net::{UdpSocket, SocketAddr};
 use ini::Ini;
 use ms_dtyp;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
 extern crate winapi;
-use std::ptr::{NonNull, null_mut};
+use std::ptr::null_mut;
 use ms_dtyp::{BYTE, DWORD};
 use winapi::{Class, Interface};
 use winapi::um::audioclient::*;
@@ -21,25 +20,13 @@ use winapi::um::audiosessiontypes::{AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAG
 use winapi::um::consoleapi::SetConsoleCtrlHandler;
 use winapi::um::wincon::CTRL_CLOSE_EVENT;
 
-struct CleanupResources {
-    capture_client: Mutex<NonNull<IAudioCaptureClient>>,
-    audio_client: Mutex<NonNull<IAudioClient>>,
-    device: Mutex<NonNull<IMMDevice>>,
-    device_enumerator: Mutex<NonNull<IMMDeviceEnumerator>>,
-}
 
-unsafe impl Send for CleanupResources {}
-unsafe impl Sync for CleanupResources {}
-
-lazy_static::lazy_static! {
-    static ref CLEANUP_RESOURCES: Arc<Mutex<Option<CleanupResources>>> = Arc::new(Mutex::new(None));
-}
+static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> i32 {
     match ctrl_type {
         CTRL_CLOSE_EVENT => {
-            println!("Exiting...");
-            cleanup();
+            QUIT_REQUESTED.store(true, Ordering::SeqCst);
             1
         }
         _ => 0,
@@ -98,31 +85,12 @@ fn print_banner() {
     println!("Press Ctrl+C to exit\n");
 }
 
-fn cleanup() {
-    let maybe_resources = CLEANUP_RESOURCES.lock().unwrap().take();
-    if let Some(resources) = maybe_resources {
-        unsafe {
-            // Use `as_ref` to convert the raw pointer to a reference.
-            // This is unsafe because it assumes the pointer is valid and properly aligned.
-            let capture_client = &*resources.capture_client.lock().unwrap().as_ptr();
-            let audio_client = &*resources.audio_client.lock().unwrap().as_ptr();
-            let device = &*resources.device.lock().unwrap().as_ptr();
-            let device_enumerator = &*resources.device_enumerator.lock().unwrap().as_ptr();
-
-            // Directly call the Release method on the reference.
-            // These calls are still unsafe, as you're assuming the COM contract is upheld.
-            capture_client.Release();
-            audio_client.Release();
-            device.Release();
-            device_enumerator.Release();
-
-            CoUninitialize();
-        }
-    }
-
-}
 
 fn main() {
+    ctrlc::set_handler(move || {
+        QUIT_REQUESTED.store(true, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
+
     unsafe {
         SetConsoleCtrlHandler(Some(ctrl_handler), 1);
     }
@@ -148,12 +116,6 @@ fn main() {
 
     let reset_timeout = Duration::from_millis(config.section(Some("audio")).unwrap().get("reset_timeout_ms").unwrap().parse::<u64>().unwrap());
     let timeout = Duration::from_millis(config.section(Some("audio")).unwrap().get("timeout_ms").unwrap().parse::<u64>().unwrap());
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
 
     print_banner();
 
@@ -221,20 +183,7 @@ fn main() {
         // Start the audio stream
         (*audio_client).Start();
 
-        let resources = CleanupResources {
-            capture_client: Mutex::new(NonNull::new(capture_client).unwrap()),
-            audio_client: Mutex::new(NonNull::new(audio_client).unwrap()),
-            device: Mutex::new(NonNull::new(device).unwrap()),
-            device_enumerator: Mutex::new(NonNull::new(device_enumerator).unwrap()),
-        };
-
-        *CLEANUP_RESOURCES.lock().unwrap() = Some(resources);
-
-        loop {
-            if !running.load(Ordering::SeqCst) {
-                break;
-            }
-
+        while !QUIT_REQUESTED.load(Ordering::SeqCst) {
             let mut packet_length: u32 = 0;
             (*capture_client).GetNextPacketSize(&mut packet_length);
             while packet_length != 0 {
@@ -275,7 +224,6 @@ fn main() {
             std::thread::sleep(Duration::from_millis(20));
         }
 
-
         (*audio_client).Stop();
 
         // Release Resources
@@ -283,7 +231,13 @@ fn main() {
             CoTaskMemFree(wave_format_ptr as *mut _);
         }
 
-        cleanup();
+        (*audio_client).Release();
+        (*device).Release();
+        (*device_enumerator).Release();
+        (*capture_client).Release();
+
+        CoUninitialize();
+
     }
 }
 
