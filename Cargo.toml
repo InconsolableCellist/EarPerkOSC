@@ -13,3 +13,6 @@ rosc = "0.10.1"
 rust-ini = "0.20.0"
 ctrlc = "3.4.2"
 lazy_static = "1.4.0"
+fern = { version = "0.6.2", features = ["colored"] }
+log = "0.4.14"
+chrono = "0.4.33"

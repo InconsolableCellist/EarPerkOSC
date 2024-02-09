@@ -2,7 +2,8 @@ mod config;
 mod osc;
 mod process;
 mod info;
-
+mod logging;
+use logging::setup_logger;
 use info::{print_banner, print_wave_format_information};
 use process::{calculate_avg_lr, process_vol_overwhelm, process_vol_perk_and_reset};
 use config::read_config_ini;
@@ -26,7 +27,7 @@ use winapi::shared::mmreg::WAVEFORMATEX;
 use winapi::um::audiosessiontypes::{AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK};
 use winapi::um::consoleapi::SetConsoleCtrlHandler;
 use winapi::um::wincon::CTRL_CLOSE_EVENT;
-
+use log::info;
 
 static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -45,6 +46,7 @@ fn main() {
     ctrlc::set_handler(move || {
         QUIT_REQUESTED.store(true, Ordering::SeqCst);
     }).expect("Error setting Ctrl-C handler");
+    setup_logger().unwrap_or_else(|e| panic!("Failed to set up logger: {}", e));
 
     unsafe {
         SetConsoleCtrlHandler(Some(ctrl_handler), 1);
@@ -63,8 +65,8 @@ fn main() {
     let config = read_config_ini().unwrap_or_else(|e| panic!("Failed to read config: {}", e));
     print_banner();
 
-    println!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
-    println!("L: perk left ear, R: perk right ear, B: perk both ears, !L: reset left ear, !R: reset right ear\n\
+    info!("Now listening for stereo audio and sending OSC messages for ear perk on/off...");
+    info!("L: perk left ear, R: perk right ear, B: perk both ears, !L: reset left ear, !R: reset right ear\n\
         O: Overwhelmingly loud!, !O: Overwhelming reset\n");
 
     unsafe {
@@ -185,8 +187,8 @@ fn init_audio() -> Option<(*mut IMMDeviceEnumerator, *mut IMMDevice, *mut IAudio
         );
 
         if capture_client.is_null() {
-            println!("Failed to get capture client");
-            println!("This might happen because the audio device is in use by another application. Please close any other applications using the audio device and try again.");
+            info!("Failed to get capture client");
+            info!("This might happen because the audio device is in use by another application. Please close any other applications using the audio device and try again.");
             return None;
         }
         Some((device_enumerator, device, audio_client, wave_format_ptr, capture_client))
