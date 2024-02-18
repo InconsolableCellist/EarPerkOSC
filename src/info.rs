@@ -1,5 +1,5 @@
-use winapi::shared::mmreg::WAVEFORMATEX;
 use log::info;
+use wasapi::WaveFormat;
 
 pub fn print_banner() {
     info!("EarPerkOSC v1.0");
@@ -8,7 +8,8 @@ pub fn print_banner() {
     info!("Press Ctrl+C to exit\n");
 }
 
-pub fn print_wave_format_information(wave_format: WAVEFORMATEX) {
+pub fn print_wave_format_information(wave_format: WaveFormat) {
+    let wave_format = wave_format.as_waveformatex_ref();
     let format_tag = wave_format.wFormatTag;
     let channels = wave_format.nChannels;
     let samples_per_sec = wave_format.nSamplesPerSec;
