@@ -18,37 +18,24 @@ use rosc::OscType;
 use ms_dtyp;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-extern crate winapi;
 use std::ptr::null_mut;
 use ms_dtyp::{BYTE, DWORD};
-use winapi::{Class, Interface};
-use winapi::um::consoleapi::SetConsoleCtrlHandler;
-use winapi::um::wincon::CTRL_CLOSE_EVENT;
 use log::info;
+use tokio::signal;
 use wasapi::{AudioCaptureClient, AudioClient, Direction, get_default_device, Handle, initialize_mta, SampleType, ShareMode, WaveFormat};
 
 static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
-unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> i32 {
-    match ctrl_type {
-        CTRL_CLOSE_EVENT => {
-            QUIT_REQUESTED.store(true, Ordering::SeqCst);
-            1
-        }
-        _ => 0,
-    }
-}
-
-
-fn main() {
-    ctrlc::set_handler(move || {
-        QUIT_REQUESTED.store(true, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
+#[tokio::main]
+async fn main() {
     setup_logger().unwrap_or_else(|e| panic!("Failed to set up logger: {}", e));
 
-    unsafe {
-        SetConsoleCtrlHandler(Some(ctrl_handler), 1);
-    }
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+
+        info!("CTRL-C Hit");
+        QUIT_REQUESTED.store(true, Ordering::SeqCst);
+    });
     let args_true = vec![OscType::Bool(true)];
     let args_false = vec![OscType::Bool(false)];
 
