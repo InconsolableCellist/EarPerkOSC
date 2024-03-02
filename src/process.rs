@@ -1,3 +1,6 @@
+use std::collections::VecDeque;
+use std::io;
+use std::io::Write;
 use std::time::Instant;
 use rosc::OscType;
 use crate::config::Config;
@@ -63,6 +66,7 @@ pub fn process_vol_perk_and_reset(args_true: &Vec<OscType>, args_false: &Vec<Osc
             *right_perked = false;
         }
     }
+    io::stdout().flush().unwrap();
 }
 
 /// This function processes the volume and checks if it is overwhelmingly loud.
@@ -85,26 +89,36 @@ pub fn process_vol_overwhelm(args_true: &Vec<OscType>, args_false: &Vec<OscType>
                          overwhelmingly_loud: &mut bool) {
     if left_avg > config.excessive_volume_threshold || right_avg > config.excessive_volume_threshold {
         print!("O");
+        io::stdout().flush().unwrap();
         send_osc_message(&config.address_overwhelmingly_loud, &args_true, &config.address);
         *last_overwhelm_timestamp = current_time;
         *overwhelmingly_loud = true;
     } else if *overwhelmingly_loud && current_time - *last_overwhelm_timestamp > config.reset_timeout {
         print!("!O");
+        io::stdout().flush().unwrap();
         send_osc_message(&config.address_overwhelmingly_loud, &args_false, &config.address);
         *overwhelmingly_loud = false;
     }
 }
 
-pub fn calculate_avg_lr(samples: &[f32]) -> (f32, f32) {
+pub fn calculate_avg_lr(sample_queue: &mut VecDeque<u8>, num_channels: usize) -> (f32, f32) {
     let mut left_volume = 0.0;
     let mut right_volume = 0.0;
     let mut count = 0;
-    for chunk in samples.chunks(2) {
-        if let [left, right] = chunk {
-            left_volume += left.abs();
-            right_volume += right.abs();
-            count += 1;
+    while sample_queue.len() >= num_channels * 4 {
+        let mut left_bytes = [0u8; 4];
+        let mut right_bytes = [0u8; 4];
+        for byte in left_bytes.iter_mut() {
+            *byte = sample_queue.pop_front().unwrap();
         }
+        for byte in right_bytes.iter_mut() {
+            *byte = sample_queue.pop_front().unwrap();
+        }
+        let left = f32::from_le_bytes(left_bytes);
+        let right = f32::from_le_bytes(right_bytes);
+        left_volume += left.abs();
+        right_volume += right.abs();
+        count += 1;
     }
     left_volume /= count as f32;
     right_volume /= count as f32;
