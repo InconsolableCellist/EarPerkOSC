@@ -4,7 +4,6 @@ use ini::Ini;
 
 pub struct Config {
     pub address: SocketAddr,
-    pub port: String,
     pub address_left: String,
     pub address_right: String,
     pub address_overwhelmingly_loud: String,
@@ -26,8 +25,7 @@ pub fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
     config.with_section(Some("version"))
         .set("version", "1.0");
     config.with_section(Some("connection"))
-        .set("address", "127.0.0.1")
-        .set("port", "9000")
+        .set("address", "127.0.0.1:9000")
         .set("osc_address_left", "/avatar/parameters/EarPerkLeft")
         .set("osc_address_right", "/avatar/parameters/EarPerkRight")
         .set("osc_address_overwhelmingly_loud", "/avatar/parameters/EarOverwhelm");
@@ -41,6 +39,28 @@ pub fn create_config_ini_if_not_exists() -> Result<(), std::io::Error> {
     Ok(())
 }
 
+pub fn save_ini(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let mut out_config = Ini::new();
+    // Set the values in the Ini from the Config
+    out_config.with_section(None::<String>).set("encoding", "utf-8");
+    out_config.with_section(Some("version"))
+        .set("version", "1.0");
+    out_config.with_section(Some("connection"))
+        .set("address", &config.address.to_string())
+        .set("osc_address_left", &config.address_left)
+        .set("osc_address_right", &config.address_right)
+        .set("osc_address_overwhelmingly_loud", &config.address_overwhelmingly_loud);
+    out_config.with_section(Some("audio"))
+        .set("differential_threshold", &config.differential_threshold.to_string())
+        .set("volume_threshold", &config.volume_threshold.to_string())
+        .set("excessive_volume_threshold", &config.excessive_volume_threshold.to_string())
+        .set("reset_timeout_ms", &config.reset_timeout.as_millis().to_string())
+        .set("timeout_ms", &config.timeout.as_millis().to_string());
+    // Write the Ini to the config.ini file
+    out_config.write_to_file("config.ini")?;
+    Ok(())
+}
+
 pub fn read_config_ini() -> Result<Config, Box<dyn std::error::Error>> {
     create_config_ini_if_not_exists()?;
     let config = Ini::load_from_file("config.ini")?;
@@ -48,8 +68,7 @@ pub fn read_config_ini() -> Result<Config, Box<dyn std::error::Error>> {
     let audio = config.section(Some("audio")).ok_or("Missing 'audio' section")?;
 
     // set address as a SocketAddr
-    let address = format!("{}:{}", connection.get("address").ok_or("Missing 'address'")?, connection.get("port").ok_or("Missing 'port'")?).parse()?;
-    let port = connection.get("port").ok_or("Missing 'port'")?.to_owned();
+    let address = connection.get("address").ok_or("Missing 'address'")?.parse()?;
     let address_left = connection.get("osc_address_left").ok_or("Missing 'osc_address_left'")?.to_owned();
     let address_right = connection.get("osc_address_right").ok_or("Missing 'osc_address_right'")?.to_owned();
     let address_overwhelmingly_loud = connection.get("osc_address_overwhelmingly_loud").ok_or("Missing 'osc_address_overwhelmingly_loud'")?.to_owned();
@@ -62,7 +81,6 @@ pub fn read_config_ini() -> Result<Config, Box<dyn std::error::Error>> {
 
     Ok(Config {
         address,
-        port,
         address_left,
         address_right,
         address_overwhelmingly_loud,

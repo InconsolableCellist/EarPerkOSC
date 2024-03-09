@@ -1,10 +1,12 @@
 use std::collections::VecDeque;
 use std::io;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::Instant;
 use rosc::OscType;
 use crate::config::Config;
 use crate::osc::send_osc_message;
+
 
 /// This function processes the volume and checks for ear perking conditions.
 /// If the left channel's average volume is louder than the right by a certain threshold, it sends an OSC message to perk the left ear.
@@ -23,7 +25,7 @@ use crate::osc::send_osc_message;
 /// * `left_avg` - The average volume of the left channel.
 /// * `right_avg` - The average volume of the right channel.
 /// * `current_time` - The current time.
-pub fn process_vol_perk_and_reset(args_true: &Vec<OscType>, args_false: &Vec<OscType>, config: &Config, last_left_message_timestamp: &mut Instant,
+pub fn process_vol_perk_and_reset(args_true: &Vec<OscType>, args_false: &Vec<OscType>, config: Arc<Config>, last_left_message_timestamp: &mut Instant,
                               last_right_message_timestamp: &mut Instant, left_perked: &mut bool, right_perked: &mut bool,
                               left_avg: f32, right_avg: f32, current_time: Instant) {
     if left_avg > config.differential_threshold
@@ -84,9 +86,8 @@ pub fn process_vol_perk_and_reset(args_true: &Vec<OscType>, args_false: &Vec<Osc
 /// * `last_overwhelm_timestamp` - The timestamp of the last message sent for an overwhelmingly loud volume.
 /// * `current_time` - The current time.
 /// * `overwhelmingly_loud` - A boolean indicating the current state of whether the volume is overwhelmingly loud.
-pub fn process_vol_overwhelm(args_true: &Vec<OscType>, args_false: &Vec<OscType>, config:&Config,
-                         left_avg: f32, right_avg: f32, last_overwhelm_timestamp: &mut Instant, current_time: Instant,
-                         overwhelmingly_loud: &mut bool) {
+pub fn process_vol_overwhelm(args_true: &Vec<OscType>, args_false: &Vec<OscType>, config: Arc<Config>, left_avg: f32, right_avg: f32, last_overwhelm_timestamp: &mut Instant,
+                             current_time: Instant, overwhelmingly_loud: &mut bool) {
     if left_avg > config.excessive_volume_threshold || right_avg > config.excessive_volume_threshold {
         print!("O");
         io::stdout().flush().unwrap();

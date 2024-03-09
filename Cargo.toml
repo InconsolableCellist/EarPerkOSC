@@ -17,3 +17,5 @@ fern = { version = "0.6.2", features = ["colored"] }
 log = "0.4.14"
 chrono = "0.4.33"
 tokio = { version = "1.36.0", features = ["full"] }
+egui = "0.26.0"
+eframe = "0.18.0"

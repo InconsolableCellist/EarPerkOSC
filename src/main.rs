@@ -3,6 +3,9 @@ mod osc;
 mod process;
 mod info;
 mod logging;
+mod ui;
+mod init;
+mod audio;
 
 use std::collections::VecDeque;
 use logging::setup_logger;
@@ -14,10 +17,12 @@ use std::io;
 use std::io::Write;
 extern crate rosc;
 use rosc::OscType;
-use ms_dtyp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use log::info;
 use wasapi::{AudioCaptureClient, AudioClient, Direction, get_default_device, Handle, initialize_mta, SampleType, ShareMode, WaveFormat};
+use eframe::{egui::vec2, run_native, NativeOptions};
+use eframe::egui::Vec2;
+use crate::ui::EarPerkOSCUI;
 
 static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -32,6 +37,17 @@ async fn main() {
         io::stdout().flush().unwrap();
         QUIT_REQUESTED.store(true, Ordering::SeqCst);
     });
+
+    let config = read_config_ini().unwrap_or_else(|e| panic!("Failed to read config: {}", e));
+    let mut native_opts = eframe::NativeOptions::default();
+    native_opts.initial_window_size = Some(Vec2::new(800., 400.));
+    run_native(
+    "Ear Perk OSC",
+        native_opts,
+        Box::new(|cc| Box::new(EarPerkOSCUI::new(cc, config))),
+    );
+
+    /*
     let args_true = vec![OscType::Bool(true)];
     let args_false = vec![OscType::Bool(false)];
 
@@ -83,29 +99,5 @@ async fn main() {
                                        &mut left_perked, &mut right_perked, left_avg, right_avg, current_time);
         }
     }
-}
-
-fn init_audio() -> Option<(Handle, AudioClient, WaveFormat, AudioCaptureClient)> {
-    initialize_mta().unwrap();
-
-    let device = get_default_device(&Direction::Render);
-    let mut audio_client = device.unwrap().get_iaudioclient().unwrap();
-
-    let desired_format = WaveFormat::new(32, 32, &SampleType::Float, 44100, 2, None);
-
-    let (_def_time, min_time) = audio_client.get_periods().unwrap();
-
-    audio_client.initialize_client(
-        &desired_format,
-        min_time,
-        &Direction::Capture,
-        &ShareMode::Shared,
-        true,
-    ).unwrap();
-
-    let h_event = audio_client.set_get_eventhandle().unwrap();
-
-    let render_client = audio_client.get_audiocaptureclient().unwrap();
-
-    return Some((h_event, audio_client, desired_format, render_client));
+    */
 }
