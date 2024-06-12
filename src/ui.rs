@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::error::Error;
+use std::sync::Arc;
 
 use eframe::{
     App,
@@ -21,7 +22,7 @@ pub struct EarPerkOSCUI {
 
 impl EarPerkOSCUI {
     pub fn new(cc: &eframe::CreationContext<'_>, config: Config) -> Self {
-        let audio_processor = AudioProcessor::new(config.clone());
+        let audio_processor = AudioProcessor::new(Arc::new(config.clone()));
 
         audio_processor.start_stream();
 
@@ -38,6 +39,14 @@ impl App for EarPerkOSCUI {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let last_left_volume = self.audio_processor.get_last_left_volume();
         let last_right_volume = self.audio_processor.get_last_right_volume();
+        // Use a block to await the async function and get the value
+        let left_volume = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(self.audio_processor.get_last_left_volume());
+
+        let right_volume = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(self.audio_processor.get_last_right_volume());
 
         CentralPanel::default().show(ctx, |ui| {
             // Top panel for status
@@ -56,8 +65,6 @@ impl App for EarPerkOSCUI {
 
             // Bottom panel for last recorded left/right volumes
             egui::TopBottomPanel::bottom("volume_panel").show(ctx, |ui| {
-                let mut left_volume         = last_left_volume;
-                let mut right_volume        = last_right_volume;
                 let mut volume_threshold    = self.config.volume_threshold;
                 let mut overwhelming_threshold = self.config.excessive_volume_threshold;
                 let mut differential_threshold = self.config.differential_threshold;

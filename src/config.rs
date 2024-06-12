@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use ini::Ini;
 
+#[derive(Clone)]
 pub struct Config {
     pub address: SocketAddr,
     pub address_left: String,
