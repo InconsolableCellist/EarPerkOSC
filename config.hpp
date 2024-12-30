@@ -22,4 +22,5 @@ struct Config {
 
     // Create default config file if it doesn't exist
     static bool CreateDefaultConfigFile(const std::string& filename = "config.ini");
+    bool SaveToFile(const std::string& filename = "config.ini") const;
 };

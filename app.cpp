@@ -68,6 +68,10 @@ bool EarPerkApp::Initialize() {
         return false;
     }
 
+    glfwSetWindowUserPointer(window, this);
+    glfwSetWindowFocusCallback(window, WindowFocusCallback);
+    glfwSetWindowIconifyCallback(window, WindowIconifyCallback);
+
     audioProcessor->Start();
     return true;
 }
@@ -75,6 +79,12 @@ bool EarPerkApp::Initialize() {
 void EarPerkApp::Run() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
+        // Skip rendering when minimized
+        if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) ||
+            !glfwGetWindowAttrib(window, GLFW_VISIBLE)) {
+            continue;
+        }
 
         // Clear the background
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
@@ -87,6 +97,11 @@ void EarPerkApp::Run() {
 }
 
 void EarPerkApp::RenderUI() {
+    if (!glfwGetWindowAttrib(window, GLFW_FOCUSED) ||
+        glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
+        return;  // Skip rendering when window is not focused
+    }
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -145,9 +160,45 @@ void EarPerkApp::DrawConfigurationPanel() {
 
         ImGui::Separator();
         ImGui::Text("Thresholds");
-        ImGui::Text("Differential: %.3f", config.differential_threshold);
-        ImGui::Text("Volume: %.3f", config.volume_threshold);
-        ImGui::Text("Excessive: %.3f", config.excessive_volume_threshold);
+
+        bool changed = false;
+        float differential = config.differential_threshold;
+        float volume = config.volume_threshold;
+        float excessive = config.excessive_volume_threshold;
+
+        // Add sliders for each threshold
+        if (ImGui::SliderFloat("Differential Threshold", &differential, 0.001f, 0.1f, "%.3f")) {
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Minimum difference in volume between ears to trigger a perk");
+        }
+
+        if (ImGui::SliderFloat("Volume Threshold", &volume, 0.001f, 0.5f, "%.3f")) {
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Minimum volume required to trigger a perk");
+        }
+
+        if (ImGui::SliderFloat("Excessive Volume", &excessive, 0.2f, 1.0f, "%.3f")) {
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Volume threshold for overwhelm state");
+        }
+
+        if (changed) {
+            UpdateThresholds(differential, volume, excessive);
+        }
+
+        if (ImGui::Button("Save Configuration")) {
+            SaveConfiguration();
+        }
+        ImGui::SameLine();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Save current settings to config.ini");
+        }
     }
 }
 
@@ -176,4 +227,40 @@ void EarPerkApp::SetupImGuiStyle() {
     // Spacing and sizes
     style.ItemSpacing = ImVec2(8, 4);
     style.FramePadding = ImVec2(4, 3);
+}
+
+void EarPerkApp::UpdateThresholds(float differential, float volume, float excessive) {
+    config.differential_threshold = differential;
+    config.volume_threshold = volume;
+    config.excessive_volume_threshold = excessive;
+
+    // Update audio processor with new thresholds
+    if (audioProcessor) {
+        audioProcessor->UpdateThresholds(differential, volume, excessive);
+    }
+}
+
+void EarPerkApp::SaveConfiguration() {
+    config.SaveToFile();
+}
+
+void EarPerkApp::WindowFocusCallback(GLFWwindow* window, int focused) {
+    auto* app = static_cast<EarPerkApp*>(glfwGetWindowUserPointer(window));
+    if (focused && app->wasMinimized) {
+        // Reinitialize ImGui
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+
+        ImGui::CreateContext();
+        ImGui_ImplGlfw_InitForOpenGL(window, true);
+        ImGui_ImplOpenGL3_Init("#version 130");
+
+        app->wasMinimized = false;
+    }
+}
+
+void EarPerkApp::WindowIconifyCallback(GLFWwindow* window, int iconified) {
+    auto* app = static_cast<EarPerkApp*>(glfwGetWindowUserPointer(window));
+    app->wasMinimized = iconified != 0;
 }

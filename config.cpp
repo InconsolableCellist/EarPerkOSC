@@ -64,3 +64,25 @@ bool Config::LoadFromFile(const std::string& filename) {
 
     return true;
 }
+
+bool Config::SaveToFile(const std::string& filename) const {
+    std::ofstream config_file(filename);
+    if (!config_file.is_open()) {
+        return false;
+    }
+
+    config_file << "[connection]\n"
+        << "address=" << address << "\n"
+        << "port=" << port << "\n"
+        << "osc_address_left=" << address_left << "\n"
+        << "osc_address_right=" << address_right << "\n"
+        << "osc_address_overwhelmingly_loud=" << address_overwhelmingly_loud << "\n\n"
+        << "[audio]\n"
+        << "differential_threshold=" << differential_threshold << "\n"
+        << "volume_threshold=" << volume_threshold << "\n"
+        << "excessive_volume_threshold=" << excessive_volume_threshold << "\n"
+        << "reset_timeout_ms=" << reset_timeout_ms << "\n"
+        << "timeout_ms=" << timeout_ms << "\n";
+
+    return true;
+}

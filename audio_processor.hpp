@@ -29,6 +29,12 @@ public:
     bool IsRightPerked() const { return right_perked; }
     bool IsOverwhelmed() const { return overwhelmingly_loud; }
 
+    void UpdateThresholds(float differential, float volume, float excessive) {
+        config.differential_threshold = differential;
+        config.volume_threshold = volume;
+        config.excessive_volume_threshold = excessive;
+    }
+
 private:
     void ProcessAudio();
     std::pair<float, float> CalculateAvgLR();

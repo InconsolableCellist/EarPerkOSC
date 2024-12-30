@@ -41,4 +41,8 @@ private:
     const int WINDOW_WIDTH = 800;
     const int WINDOW_HEIGHT = 600;
     const char* WINDOW_TITLE = "EarPerk OSC";
+    bool wasMinimized = false;
+
+    static void WindowFocusCallback(GLFWwindow* window, int focused);
+    static void WindowIconifyCallback(GLFWwindow* window, int iconified);
 };
