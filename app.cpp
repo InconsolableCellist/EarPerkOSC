@@ -106,9 +106,18 @@ void EarPerkApp::RenderUI() {
     // Set up main window with proper flags
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove;
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoTitleBar | // Add this to remove title bar
+        ImGuiWindowFlags_NoBringToFrontOnFocus; // Add this to prevent window from floating
 
-    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    // Get the GLFW window size
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+
+    // Set the window position to (0,0) and size to full window
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(width, height));
+
     ImGui::Begin("EarPerk OSC", nullptr, window_flags);
 
     DrawVolumeMeters();
@@ -116,6 +125,10 @@ void EarPerkApp::RenderUI() {
     DrawStatusIndicators();
     DrawConfigurationPanel();
     DrawStatusText();
+
+    ImGui::Separator();
+    ImGui::SetCursorPosY(ImGui::GetWindowSize().y - 25);
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "EarPerkOSC v1.0 by Foxipso - foxipso.com");
 
     ImGui::End();
 
@@ -128,7 +141,7 @@ void EarPerkApp::DrawVolumeMeters() {
     
     float left_vol = audioProcessor->GetLeftVolume();
     float right_vol = audioProcessor->GetRightVolume();
-    const float scale = 2.0f; // Scale volumes for better visibility
+    const float scale = 2.0f;
     left_vol *= scale;
     right_vol *= scale;
 
@@ -187,7 +200,7 @@ void EarPerkApp::DrawVolumeMeters() {
     ImGui::PopStyleColor();
     
     ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-    bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.2f, 1.0f, "%.3f");
+    bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.05f, 1.0f, "%.3f");
     ImGui::PopStyleColor();
     
     if (thresh_changed || excess_changed) {
@@ -254,7 +267,7 @@ void EarPerkApp::DrawStatusText() {
 
 
 void EarPerkApp::DrawConfigurationPanel() {
-    if (ImGui::CollapsingHeader("Configuration", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Advanced Configuration")) {
         ImGui::Text("OSC Settings");
 
         char addr_buf[256];
@@ -262,10 +275,16 @@ void EarPerkApp::DrawConfigurationPanel() {
         if (ImGui::InputText("Address", addr_buf, sizeof(addr_buf))) {
             config.address = addr_buf;
         }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("IP address to send OSC messages to (usually 127.0.0.1 for local VRChat)");
+        }
 
         int port = config.port;
         if (ImGui::InputInt("Port", &port)) {
             config.port = port;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Port number for OSC messages (usually 9000 for VRChat)");
         }
 
         ImGui::Separator();
@@ -278,7 +297,24 @@ void EarPerkApp::DrawConfigurationPanel() {
             changed = true;
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Minimum difference in volume between ears to trigger a perk");
+            ImGui::SetTooltip("Minimum difference in volume between ears to trigger only one to perk");
+        }
+
+        // Add these new sliders
+        int timeout = config.timeout_ms;
+        if (ImGui::SliderInt("Cooldown Time", &timeout, 50, 1000, "%d ms")) {
+            config.timeout_ms = timeout;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Minimum time between ear perks");
+        }
+
+        int reset_timeout = config.reset_timeout_ms;
+        if (ImGui::SliderInt("Reset Time", &reset_timeout, 500, 5000, "%d ms")) {
+            config.reset_timeout_ms = reset_timeout;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Time until ears return to neutral position after being perked");
         }
 
         if (changed) {
@@ -294,7 +330,6 @@ void EarPerkApp::DrawConfigurationPanel() {
         }
     }
 }
-
 
 void EarPerkApp::SetupImGuiStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
