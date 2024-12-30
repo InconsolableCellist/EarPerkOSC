@@ -32,6 +32,7 @@ private:
     void DrawConfigurationPanel();
     void UpdateThresholds(float differential, float volume, float excessive);
     void SaveConfiguration();
+    void DrawStatusText();
 
     GLFWwindow* window;
     std::unique_ptr<AudioProcessor> audioProcessor;

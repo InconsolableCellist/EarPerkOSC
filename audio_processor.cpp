@@ -1,5 +1,6 @@
 #include "audio_processor.hpp"
 #include <functional>
+#include <iostream>
 
 AudioProcessor::AudioProcessor(const Config& config)
     : pEnumerator(nullptr)

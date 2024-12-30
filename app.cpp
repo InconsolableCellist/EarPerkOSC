@@ -5,7 +5,9 @@
 #include <iostream>
 #include <glad/glad.h>
 
-EarPerkApp::EarPerkApp() : window(nullptr) {}
+EarPerkApp::EarPerkApp() : window(nullptr) {
+	ImGui::SetCurrentContext(nullptr);  // Ensure no context exists before creation
+}
 
 EarPerkApp::~EarPerkApp() {
     ImGui_ImplOpenGL3_Shutdown();
@@ -97,21 +99,23 @@ void EarPerkApp::Run() {
 }
 
 void EarPerkApp::RenderUI() {
-    if (!glfwGetWindowAttrib(window, GLFW_FOCUSED) ||
-        glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
-        return;  // Skip rendering when window is not focused
-    }
-
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("EarPerk OSC");
+    // Set up main window with proper flags
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove;
+
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    ImGui::Begin("EarPerk OSC", nullptr, window_flags);
 
     DrawVolumeMeters();
     ImGui::Separator();
     DrawStatusIndicators();
     DrawConfigurationPanel();
+    DrawStatusText();
 
     ImGui::End();
 
@@ -121,52 +125,155 @@ void EarPerkApp::RenderUI() {
 
 void EarPerkApp::DrawVolumeMeters() {
     ImGui::Text("Volume Levels");
-
+    
     float left_vol = audioProcessor->GetLeftVolume();
     float right_vol = audioProcessor->GetRightVolume();
-
-    // Scale volumes for display
-    const float scale = 2.0f; // Adjust this value to make meters more visible
+    const float scale = 2.0f; // Scale volumes for better visibility
     left_vol *= scale;
     right_vol *= scale;
 
-    ImGui::ProgressBar(left_vol, ImVec2(-1, 0), "Left Channel");
-    ImGui::ProgressBar(right_vol, ImVec2(-1, 0), "Right Channel");
+    // Draw threshold line markers in the progress bars
+    float thresh_pos = config.volume_threshold * scale;
+    float excess_pos = config.excessive_volume_threshold * scale;
+    
+    ImGui::Text("Left Channel"); 
+    ImVec2 pos = ImGui::GetCursorPos();
+    ImGui::ProgressBar(left_vol, ImVec2(-1, 20));
+    
+    // Draw threshold markers
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 bar_start = ImGui::GetItemRectMin();
+    ImVec2 bar_end = ImGui::GetItemRectMax();
+    float bar_width = bar_end.x - bar_start.x;
+    
+    // Volume threshold line
+    float x_pos = bar_start.x + bar_width * thresh_pos;
+    draw_list->AddLine(
+        ImVec2(x_pos, bar_start.y), 
+        ImVec2(x_pos, bar_end.y),
+        IM_COL32(255, 255, 0, 255), 2.0f);
+        
+    // Excessive volume threshold line
+    x_pos = bar_start.x + bar_width * excess_pos;
+    draw_list->AddLine(
+        ImVec2(x_pos, bar_start.y), 
+        ImVec2(x_pos, bar_end.y),
+        IM_COL32(255, 0, 0, 255), 2.0f);
+
+    // Repeat for right channel
+    ImGui::Text("Right Channel");
+    ImGui::ProgressBar(right_vol, ImVec2(-1, 20));
+    
+    bar_start = ImGui::GetItemRectMin();
+    bar_end = ImGui::GetItemRectMax();
+    bar_width = bar_end.x - bar_start.x;
+    
+    x_pos = bar_start.x + bar_width * thresh_pos;
+    draw_list->AddLine(
+        ImVec2(x_pos, bar_start.y), 
+        ImVec2(x_pos, bar_end.y),
+        IM_COL32(255, 255, 0, 255), 2.0f);
+        
+    x_pos = bar_start.x + bar_width * excess_pos;
+    draw_list->AddLine(
+        ImVec2(x_pos, bar_start.y), 
+        ImVec2(x_pos, bar_end.y),
+        IM_COL32(255, 0, 0, 255), 2.0f);
+
+    // Add interactive threshold controls
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+    bool thresh_changed = ImGui::SliderFloat("Volume Threshold", &config.volume_threshold, 0.001f, 0.5f, "%.3f");
+    ImGui::PopStyleColor();
+    
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+    bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.2f, 1.0f, "%.3f");
+    ImGui::PopStyleColor();
+    
+    if (thresh_changed || excess_changed) {
+        UpdateThresholds(config.differential_threshold, config.volume_threshold, config.excessive_volume_threshold);
+    }
 }
 
 void EarPerkApp::DrawStatusIndicators() {
-    ImGui::Text("Status");
-    ImGui::BeginChild("Status", ImVec2(0, 60), true);
+    if (!ImGui::CollapsingHeader("Status", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+    }
 
-    ImVec4 active_color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-    ImVec4 inactive_color = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-    ImVec4 warning_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+    const float TEXT_WIDTH = ImGui::GetContentRegionAvail().x;
 
-    ImGui::TextColored(audioProcessor->IsLeftPerked() ? active_color : inactive_color,
-        "Left Ear Perked");
-    ImGui::TextColored(audioProcessor->IsRightPerked() ? active_color : inactive_color,
-        "Right Ear Perked");
-    ImGui::TextColored(audioProcessor->IsOverwhelmed() ? warning_color : inactive_color,
-        "Overwhelmingly Loud");
+    // Create static colors to avoid recreation each frame
+    static const ImVec4 active_color(0.0f, 1.0f, 0.0f, 1.0f);
+    static const ImVec4 inactive_color(0.5f, 0.5f, 0.5f, 1.0f);
+    static const ImVec4 warning_color(1.0f, 0.0f, 0.0f, 1.0f);
+
+    // Create a child window with fixed size
+    ImGui::BeginChild("StatusChild", ImVec2(TEXT_WIDTH, 80), true,
+        ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollbar);
+
+    // Draw each status with proper spacing
+    ImGui::Spacing();
+
+    bool left_perked = audioProcessor && audioProcessor->IsLeftPerked();
+    bool right_perked = audioProcessor && audioProcessor->IsRightPerked();
+    bool overwhelmed = audioProcessor && audioProcessor->IsOverwhelmed();
+
+    ImGui::TextColored(left_perked ? active_color : inactive_color, "Left Ear Perked");
+    ImGui::Spacing();
+
+    ImGui::TextColored(right_perked ? active_color : inactive_color, "Right Ear Perked");
+    ImGui::Spacing();
+
+    ImGui::TextColored(overwhelmed ? warning_color : inactive_color, "Overwhelmingly Loud");
 
     ImGui::EndChild();
 }
 
+void EarPerkApp::DrawStatusText() {
+    ImGui::Separator();
+    ImGui::Text("OSC Messages:");
+
+    std::string status;
+    bool left_perked = audioProcessor->IsLeftPerked();
+    bool right_perked = audioProcessor->IsRightPerked();
+    bool overwhelmed = audioProcessor->IsOverwhelmed();
+
+    if (overwhelmed) {
+        status += "O ";
+    }
+    if (left_perked && right_perked) {
+        status += "B ";
+    }
+    else {
+        if (left_perked) status += "L ";
+        if (right_perked) status += "R ";
+    }
+
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", status.c_str());
+}
+
+
 void EarPerkApp::DrawConfigurationPanel() {
-    if (ImGui::CollapsingHeader("Configuration")) {
+    if (ImGui::CollapsingHeader("Configuration", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("OSC Settings");
-        ImGui::Text("Address: %s", config.address.c_str());
-        ImGui::Text("Port: %d", config.port);
+
+        char addr_buf[256];
+        strncpy(addr_buf, config.address.c_str(), sizeof(addr_buf) - 1);
+        if (ImGui::InputText("Address", addr_buf, sizeof(addr_buf))) {
+            config.address = addr_buf;
+        }
+
+        int port = config.port;
+        if (ImGui::InputInt("Port", &port)) {
+            config.port = port;
+        }
 
         ImGui::Separator();
         ImGui::Text("Thresholds");
 
         bool changed = false;
         float differential = config.differential_threshold;
-        float volume = config.volume_threshold;
-        float excessive = config.excessive_volume_threshold;
 
-        // Add sliders for each threshold
         if (ImGui::SliderFloat("Differential Threshold", &differential, 0.001f, 0.1f, "%.3f")) {
             changed = true;
         }
@@ -174,22 +281,8 @@ void EarPerkApp::DrawConfigurationPanel() {
             ImGui::SetTooltip("Minimum difference in volume between ears to trigger a perk");
         }
 
-        if (ImGui::SliderFloat("Volume Threshold", &volume, 0.001f, 0.5f, "%.3f")) {
-            changed = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Minimum volume required to trigger a perk");
-        }
-
-        if (ImGui::SliderFloat("Excessive Volume", &excessive, 0.2f, 1.0f, "%.3f")) {
-            changed = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Volume threshold for overwhelm state");
-        }
-
         if (changed) {
-            UpdateThresholds(differential, volume, excessive);
+            UpdateThresholds(differential, config.volume_threshold, config.excessive_volume_threshold);
         }
 
         if (ImGui::Button("Save Configuration")) {
@@ -201,6 +294,7 @@ void EarPerkApp::DrawConfigurationPanel() {
         }
     }
 }
+
 
 void EarPerkApp::SetupImGuiStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
