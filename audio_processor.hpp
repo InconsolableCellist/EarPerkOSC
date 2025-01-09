@@ -8,6 +8,7 @@
 #include <chrono>
 #include "config.hpp"
 #include "osc_sender.hpp"
+#include "volume_analyzer.hpp"
 
 class AudioProcessor {
 public:
@@ -52,6 +53,7 @@ private:
     std::deque<uint8_t> sample_queue;
     std::atomic<bool> running;
     std::thread audioThread;
+    VolumeAnalyzer volume_analyzer;
 
     // Configuration
     Config config;

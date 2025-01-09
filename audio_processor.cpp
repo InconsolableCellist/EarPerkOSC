@@ -120,6 +120,27 @@ void AudioProcessor::ProcessAudio() {
         auto [left_avg, right_avg] = CalculateAvgLR();
         auto current_time = std::chrono::steady_clock::now();
 
+        // Update volume analyzer
+        if (volume_analyzer.ShouldUpdate()) {
+            volume_analyzer.AddSample(left_avg, right_avg);
+            volume_analyzer.UpdateTimestamp();
+
+            // Update thresholds if auto mode is enabled
+            if (config.auto_volume_threshold || config.auto_excessive_threshold) {
+                auto [vol_threshold, excess_threshold] = 
+                    volume_analyzer.GetSuggestedThresholds(
+                        config.volume_threshold_multiplier,
+                        config.excessive_threshold_multiplier);
+
+                if (config.auto_volume_threshold) {
+                    config.volume_threshold = vol_threshold;
+                }
+                if (config.auto_excessive_threshold) {
+                    config.excessive_volume_threshold = excess_threshold;
+                }
+            }
+        }
+
         ProcessVolOverwhelm(left_avg, right_avg);
         if (!overwhelmingly_loud) {
             ProcessVolPerkAndReset(left_avg, right_avg);

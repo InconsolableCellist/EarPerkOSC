@@ -193,18 +193,44 @@ void EarPerkApp::DrawVolumeMeters() {
         ImVec2(x_pos, bar_end.y),
         IM_COL32(255, 0, 0, 255), 2.0f);
 
-    // Add interactive threshold controls
     ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
-    bool thresh_changed = ImGui::SliderFloat("Volume Threshold", &config.volume_threshold, 0.001f, 0.5f, "%.3f");
-    ImGui::PopStyleColor();
     
-    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-    bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.05f, 1.0f, "%.3f");
-    ImGui::PopStyleColor();
+    // Volume threshold controls
+    {
+        bool auto_vol = config.auto_volume_threshold;
+        if (ImGui::Checkbox("Auto##vol", &auto_vol)) {
+            config.auto_volume_threshold = auto_vol;
+        }
+        ImGui::SameLine();
+        
+        ImGui::BeginDisabled(config.auto_volume_threshold);
+        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+        bool thresh_changed = ImGui::SliderFloat("Volume Threshold", &config.volume_threshold, 0.001f, 0.5f, "%.3f");
+        ImGui::PopStyleColor();
+        ImGui::EndDisabled();
+        
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Minimum volume to trigger ear perk\nAuto mode adjusts based on ambient volume");
+        }
+    }
     
-    if (thresh_changed || excess_changed) {
-        UpdateThresholds(config.differential_threshold, config.volume_threshold, config.excessive_volume_threshold);
+    // Excessive threshold controls
+    {
+        bool auto_excess = config.auto_excessive_threshold;
+        if (ImGui::Checkbox("Auto##excess", &auto_excess)) {
+            config.auto_excessive_threshold = auto_excess;
+        }
+        ImGui::SameLine();
+        
+        ImGui::BeginDisabled(config.auto_excessive_threshold);
+        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+        bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.05f, 1.0f, "%.3f");
+        ImGui::PopStyleColor();
+        ImGui::EndDisabled();
+        
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Volume threshold for protective ear folding\nAuto mode adjusts based on peak volumes");
+        }
     }
 }
 
@@ -300,7 +326,6 @@ void EarPerkApp::DrawConfigurationPanel() {
             ImGui::SetTooltip("Minimum difference in volume between ears to trigger only one to perk");
         }
 
-        // Add these new sliders
         int timeout = config.timeout_ms;
         if (ImGui::SliderInt("Cooldown Time", &timeout, 50, 1000, "%d ms")) {
             config.timeout_ms = timeout;
@@ -315,6 +340,24 @@ void EarPerkApp::DrawConfigurationPanel() {
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Time until ears return to neutral position after being perked");
+        }
+
+        if (ImGui::TreeNode("Auto Threshold Settings")) {
+            bool changed = false;
+            
+            changed |= ImGui::SliderFloat("Volume Threshold Multiplier", 
+                &config.volume_threshold_multiplier, 1.0f, 4.0f, "%.1f std dev");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How many standard deviations above mean\nfor auto volume threshold");
+            }
+
+            changed |= ImGui::SliderFloat("Excessive Threshold Multiplier",
+                &config.excessive_threshold_multiplier, 2.0f, 5.0f, "%.1f std dev");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("How many standard deviations above mean\nfor auto excessive threshold");
+            }
+
+            ImGui::TreePop();
         }
 
         if (changed) {

@@ -13,6 +13,10 @@ Config::Config()
     , excessive_volume_threshold(0.5f)
     , reset_timeout_ms(1000)
     , timeout_ms(100)
+    , auto_volume_threshold(false)
+    , auto_excessive_threshold(false)
+    , volume_threshold_multiplier(2.0f)  // 2 standard deviations above mean
+    , excessive_threshold_multiplier(3.0f)  // 3 standard deviations above mean
 {
 }
 
@@ -33,7 +37,11 @@ bool Config::CreateDefaultConfigFile(const std::string& filename) {
         << "volume_threshold=0.2\n"
         << "excessive_volume_threshold=0.5\n"
         << "reset_timeout_ms=1000\n"
-        << "timeout_ms=100\n";
+        << "timeout_ms=100\n"
+        << "auto_volume_threshold=false\n"
+        << "auto_excessive_threshold=false\n"
+        << "volume_threshold_multiplier=2.0\n"
+        << "excessive_threshold_multiplier=3.0\n";
 
     return true;
 }
@@ -61,6 +69,10 @@ bool Config::LoadFromFile(const std::string& filename) {
     excessive_volume_threshold = reader.GetFloat("audio", "excessive_volume_threshold", excessive_volume_threshold);
     reset_timeout_ms = reader.GetInteger("audio", "reset_timeout_ms", reset_timeout_ms);
     timeout_ms = reader.GetInteger("audio", "timeout_ms", timeout_ms);
+    auto_volume_threshold = reader.GetBoolean("audio", "auto_volume_threshold", auto_volume_threshold);
+    auto_excessive_threshold = reader.GetBoolean("audio", "auto_excessive_threshold", auto_excessive_threshold);
+    volume_threshold_multiplier = reader.GetFloat("audio", "volume_threshold_multiplier", volume_threshold_multiplier);
+    excessive_threshold_multiplier = reader.GetFloat("audio", "excessive_threshold_multiplier", excessive_threshold_multiplier);
 
     return true;
 }
@@ -82,7 +94,11 @@ bool Config::SaveToFile(const std::string& filename) const {
         << "volume_threshold=" << volume_threshold << "\n"
         << "excessive_volume_threshold=" << excessive_volume_threshold << "\n"
         << "reset_timeout_ms=" << reset_timeout_ms << "\n"
-        << "timeout_ms=" << timeout_ms << "\n";
+        << "timeout_ms=" << timeout_ms << "\n"
+        << "auto_volume_threshold=" << (auto_volume_threshold ? "true" : "false") << "\n"
+        << "auto_excessive_threshold=" << (auto_excessive_threshold ? "true" : "false") << "\n"
+        << "volume_threshold_multiplier=" << volume_threshold_multiplier << "\n"
+        << "excessive_threshold_multiplier=" << excessive_threshold_multiplier << "\n";
 
     return true;
 }
