@@ -2,7 +2,7 @@
 #include <functional>
 #include <iostream>
 
-AudioProcessor::AudioProcessor(const Config& config)
+AudioProcessor::AudioProcessor(Config& config)
     : pEnumerator(nullptr)
     , pDevice(nullptr)
     , pAudioClient(nullptr)
@@ -32,6 +32,9 @@ AudioProcessor::~AudioProcessor() {
 }
 
 bool AudioProcessor::Initialize() {
+    const UINT32 REFTIMES_PER_SEC = 10000000;
+    const REFERENCE_TIME BUFFER_DURATION = REFTIMES_PER_SEC / 100; // 10ms buffer
+
     HRESULT hr = CoInitializeEx(nullptr, COINIT_SPEED_OVER_MEMORY);
     if (FAILED(hr)) return false;
 
@@ -53,7 +56,10 @@ bool AudioProcessor::Initialize() {
     hr = pAudioClient->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
         AUDCLNT_STREAMFLAGS_LOOPBACK,
-        0, 0, pwfx, nullptr);
+        BUFFER_DURATION,
+        0,
+        pwfx,
+        nullptr);
     if (FAILED(hr)) return false;
 
     hr = pAudioClient->GetService(
@@ -86,6 +92,7 @@ void AudioProcessor::Stop() {
 
 void AudioProcessor::ProcessAudio() {
     while (running) {
+        Sleep(1);
         UINT32 packetLength = 0;
         HRESULT hr = pCaptureClient->GetNextPacketSize(&packetLength);
         if (FAILED(hr)) break;
@@ -118,25 +125,31 @@ void AudioProcessor::ProcessAudio() {
         }
 
         auto [left_avg, right_avg] = CalculateAvgLR();
-        auto current_time = std::chrono::steady_clock::now();
 
-        // Update volume analyzer
-        if (volume_analyzer.ShouldUpdate()) {
-            volume_analyzer.AddSample(left_avg, right_avg);
-            volume_analyzer.UpdateTimestamp();
+        // std::cout << "UI auto_volume_threshold: " << config.auto_volume_threshold << std::endl;
+        // std::cout << "ProcessAudio auto_volume_threshold: " << config.auto_volume_threshold << std::endl;
 
-            // Update thresholds if auto mode is enabled
-            if (config.auto_volume_threshold || config.auto_excessive_threshold) {
-                auto [vol_threshold, excess_threshold] = 
-                    volume_analyzer.GetSuggestedThresholds(
-                        config.volume_threshold_multiplier,
-                        config.excessive_threshold_multiplier);
+        // Only process volume analysis at reduced rate
+        static int processCounter = 0;
+        if (++processCounter % 10 == 0) {  // Process every 10th iteration
+            if (volume_analyzer.ShouldUpdate()) {
+                volume_analyzer.AddSample(left_avg, right_avg);
+                volume_analyzer.UpdateTimestamp();
 
-                if (config.auto_volume_threshold) {
-                    config.volume_threshold = vol_threshold;
-                }
-                if (config.auto_excessive_threshold) {
-                    config.excessive_volume_threshold = excess_threshold;
+                if (config.auto_volume_threshold || config.auto_excessive_threshold) {
+                    auto [vol_threshold, excess_threshold] = 
+                        volume_analyzer.GetSuggestedThresholds(
+                            config.volume_threshold_multiplier,
+                            config.excessive_threshold_multiplier);
+
+                    if (config.auto_volume_threshold) {
+                        config.volume_threshold = vol_threshold;
+                        std::cout << "Auto volume threshold updated to: " << vol_threshold << std::endl;
+                    }
+                    if (config.auto_excessive_threshold) {
+                        config.excessive_volume_threshold = excess_threshold;
+                        std::cout << "Auto excessive threshold updated to: " << excess_threshold << std::endl;
+                    }
                 }
             }
         }

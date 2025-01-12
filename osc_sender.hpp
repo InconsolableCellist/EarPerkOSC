@@ -6,7 +6,7 @@
 
 class OSCSender {
 public:
-    explicit OSCSender(const Config& config);
+    explicit OSCSender(Config& config);
     ~OSCSender() = default;
 
     // Delete copy constructor and assignment operator

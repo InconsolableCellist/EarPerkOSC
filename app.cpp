@@ -64,7 +64,7 @@ bool EarPerkApp::Initialize() {
     SetupImGuiStyle();
 
     // Initialize audio processor
-    audioProcessor = std::make_unique<AudioProcessor>(config);
+    audioProcessor = std::make_unique<AudioProcessor>(std::ref(config));
     if (!audioProcessor->Initialize()) {
         std::cerr << "Failed to initialize audio processor" << std::endl;
         return false;

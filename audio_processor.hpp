@@ -12,7 +12,7 @@
 
 class AudioProcessor {
 public:
-    explicit AudioProcessor(const Config& config);
+    explicit AudioProcessor(Config& config);
     ~AudioProcessor();
 
     // Delete copy constructor and assignment operator
@@ -56,7 +56,7 @@ private:
     VolumeAnalyzer volume_analyzer;
 
     // Configuration
-    Config config;
+    Config& config;
     OSCSender osc;
 
     // State variables

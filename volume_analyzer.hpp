@@ -55,7 +55,7 @@ public:
     bool ShouldUpdate() const {
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
-        return elapsed >= 190; // Update at 50Hz
+        return elapsed >= 20; // Update at 50Hz
     }
 
     void UpdateTimestamp() {

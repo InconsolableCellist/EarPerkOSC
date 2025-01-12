@@ -4,7 +4,7 @@
 #include <WS2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
 
-OSCSender::OSCSender(const Config& config)
+OSCSender::OSCSender(Config& config)
     : address(config.address)
     , port(config.port)
     , address_left(config.address_left)
