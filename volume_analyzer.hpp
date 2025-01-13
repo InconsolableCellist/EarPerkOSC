@@ -3,7 +3,6 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
-#include <iostream>
 
 class VolumeAnalyzer {
 public:
