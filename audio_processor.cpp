@@ -144,11 +144,9 @@ void AudioProcessor::ProcessAudio() {
 
                     if (config.auto_volume_threshold) {
                         config.volume_threshold = vol_threshold;
-                        std::cout << "Auto volume threshold updated to: " << vol_threshold << std::endl;
                     }
                     if (config.auto_excessive_threshold) {
                         config.excessive_volume_threshold = excess_threshold;
-                        std::cout << "Auto excessive threshold updated to: " << excess_threshold << std::endl;
                     }
                 }
             }
