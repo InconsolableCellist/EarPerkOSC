@@ -13,6 +13,8 @@ notification pings).
 
 ## 🖥️ Interface
 
+![EarPerkOSC Interface](./images/screenshot1.jpg)
+
 EarPerkOSC features a real-time graphical interface showing:
 - Live volume meters for left and right audio channels
 - Volume threshold indicators for normal and excessive volume levels
