@@ -11,6 +11,9 @@ control the ear perking, and to only require 2 to 4 bits of space in your parame
 Audio is captured from your system's audio output as a loopback device--so anything you hear, your avatar will react to (including Discord/Telegram
 notification pings).
 
+<img src="EarPerkOSC_Logo.png" alt="EarPerkOSC Logo" width="300">
+
+
 ## 🖥️ Interface
 
 ![EarPerkOSC Interface](./images/screenshot1.jpg)
