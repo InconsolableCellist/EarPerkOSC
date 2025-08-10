@@ -1,7 +1,8 @@
 #include "app.hpp"
 #include <iostream>
+#include <windows.h>
 
-int main() {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     try {
         EarPerkApp app;
 

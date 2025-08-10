@@ -41,6 +41,8 @@ private:
     std::pair<float, float> CalculateAvgLR();
     void ProcessVolPerkAndReset(float left_avg, float right_avg);
     void ProcessVolOverwhelm(float left_avg, float right_avg);
+    bool CheckDeviceStatus();
+    bool TryReconnectDevice();
 
     // WASAPI interfaces
     IMMDeviceEnumerator* pEnumerator;
@@ -52,6 +54,7 @@ private:
     // Audio processing
     std::deque<uint8_t> sample_queue;
     std::atomic<bool> running;
+    std::atomic<bool> needsReconnect;
     std::thread audioThread;
     VolumeAnalyzer volume_analyzer;
 

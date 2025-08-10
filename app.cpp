@@ -3,13 +3,21 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <iostream>
+#include <algorithm>
 #include <glad/glad.h>
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#endif
 
 EarPerkApp::EarPerkApp() : window(nullptr) {
 	ImGui::SetCurrentContext(nullptr);  // Ensure no context exists before creation
 }
 
 EarPerkApp::~EarPerkApp() {
+    // Save configuration before shutting down
+    SaveConfiguration();
+    
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -43,6 +51,9 @@ bool EarPerkApp::Initialize() {
         std::cerr << "Failed to create GLFW window" << std::endl;
         return false;
     }
+
+    // Set window icon
+    SetWindowIcon();
 
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
@@ -141,13 +152,16 @@ void EarPerkApp::DrawVolumeMeters() {
     
     float left_vol = audioProcessor->GetLeftVolume();
     float right_vol = audioProcessor->GetRightVolume();
-    const float scale = 2.0f;
-    left_vol *= scale;
-    right_vol *= scale;
+    
+    // Use a scale that accommodates the max threshold range (up to 1.0)
+    // This ensures threshold indicators stay within the progress bar range
+    const float display_scale = 1.0f;  // Display volume in 0.0-1.0 range
+    left_vol = std::min(left_vol * display_scale, 1.0f);
+    right_vol = std::min(right_vol * display_scale, 1.0f);
 
-    // Draw threshold line markers in the progress bars
-    float thresh_pos = config.volume_threshold * scale;
-    float excess_pos = config.excessive_volume_threshold * scale;
+    // Calculate threshold positions (these will be in 0.0-1.0 range since sliders max at 1.0)
+    float thresh_pos = config.volume_threshold;  // Already in 0.0-0.5 range
+    float excess_pos = config.excessive_volume_threshold;  // Already in 0.05-1.0 range
     
     ImGui::Text("Left Channel"); 
     ImVec2 pos = ImGui::GetCursorPos();
@@ -200,12 +214,16 @@ void EarPerkApp::DrawVolumeMeters() {
         bool auto_vol = config.auto_volume_threshold;
         if (ImGui::Checkbox("Auto##vol", &auto_vol)) {
             config.auto_volume_threshold = auto_vol;
+            SaveConfiguration(); // Auto-save when auto button changes
         }
         ImGui::SameLine();
         
         ImGui::BeginDisabled(config.auto_volume_threshold);
         ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
         bool thresh_changed = ImGui::SliderFloat("Volume Threshold", &config.volume_threshold, 0.001f, 0.5f, "%.3f");
+        if (thresh_changed) {
+            SaveConfiguration(); // Auto-save when threshold changes
+        }
         ImGui::PopStyleColor();
         ImGui::EndDisabled();
         
@@ -219,12 +237,16 @@ void EarPerkApp::DrawVolumeMeters() {
         bool auto_excess = config.auto_excessive_threshold;
         if (ImGui::Checkbox("Auto##excess", &auto_excess)) {
             config.auto_excessive_threshold = auto_excess;
+            SaveConfiguration(); // Auto-save when auto button changes
         }
         ImGui::SameLine();
         
         ImGui::BeginDisabled(config.auto_excessive_threshold);
         ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
         bool excess_changed = ImGui::SliderFloat("Excessive Volume", &config.excessive_volume_threshold, 0.05f, 1.0f, "%.3f");
+        if (excess_changed) {
+            SaveConfiguration(); // Auto-save when threshold changes
+        }
         ImGui::PopStyleColor();
         ImGui::EndDisabled();
         
@@ -357,6 +379,10 @@ void EarPerkApp::DrawConfigurationPanel() {
                 ImGui::SetTooltip("How many standard deviations above mean\nfor auto excessive threshold");
             }
 
+            if (changed) {
+                SaveConfiguration(); // Auto-save when multipliers change
+            }
+
             ImGui::TreePop();
         }
 
@@ -435,4 +461,19 @@ void EarPerkApp::WindowFocusCallback(GLFWwindow* window, int focused) {
 void EarPerkApp::WindowIconifyCallback(GLFWwindow* window, int iconified) {
     auto* app = static_cast<EarPerkApp*>(glfwGetWindowUserPointer(window));
     app->wasMinimized = iconified != 0;
+}
+
+void EarPerkApp::SetWindowIcon() {
+#ifdef _WIN32
+    // Get the window handle
+    HWND hwnd = glfwGetWin32Window(window);
+    
+    // Load icon from resources
+    HICON hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(100));
+    if (hIcon) {
+        // Set both small and large icons
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
+#endif
 }

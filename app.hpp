@@ -46,4 +46,5 @@ private:
 
     static void WindowFocusCallback(GLFWwindow* window, int focused);
     static void WindowIconifyCallback(GLFWwindow* window, int iconified);
+    void SetWindowIcon();
 };

@@ -9,6 +9,7 @@ AudioProcessor::AudioProcessor(Config& config)
     , pCaptureClient(nullptr)
     , pwfx(nullptr)
     , running(false)
+    , needsReconnect(false)
     , config(config)
     , osc(config)
     , left_perked(false)
@@ -32,6 +33,19 @@ AudioProcessor::~AudioProcessor() {
 }
 
 bool AudioProcessor::Initialize() {
+    if (pCaptureClient) pCaptureClient->Release();
+    if (pAudioClient) pAudioClient->Release();
+    if (pDevice) pDevice->Release();
+    if (pEnumerator) pEnumerator->Release();
+    if (pwfx) CoTaskMemFree(pwfx);
+    
+    // Reset pointers
+    pCaptureClient = nullptr;
+    pAudioClient = nullptr;
+    pDevice = nullptr;
+    pEnumerator = nullptr;
+    pwfx = nullptr;
+
     const UINT32 REFTIMES_PER_SEC = 10000000;
     const REFERENCE_TIME BUFFER_DURATION = REFTIMES_PER_SEC / 100; // 10ms buffer
 
@@ -90,12 +104,89 @@ void AudioProcessor::Stop() {
     }
 }
 
+bool AudioProcessor::CheckDeviceStatus() {
+    if (!pDevice) return false;
+    
+    DWORD state;
+    HRESULT hr = pDevice->GetState(&state);
+    if (FAILED(hr) || state != DEVICE_STATE_ACTIVE) {
+        return false;
+    }
+    return true;
+}
+
+bool AudioProcessor::TryReconnectDevice() {
+    // Release current interfaces
+    if (pCaptureClient) {
+        pCaptureClient->Release();
+        pCaptureClient = nullptr;
+    }
+    if (pAudioClient) {
+        pAudioClient->Stop();
+        pAudioClient->Release();
+        pAudioClient = nullptr;
+    }
+    if (pDevice) {
+        pDevice->Release();
+        pDevice = nullptr;
+    }
+    if (pEnumerator) {
+        pEnumerator->Release();
+        pEnumerator = nullptr;
+    }
+    if (pwfx) {
+        CoTaskMemFree(pwfx);
+        pwfx = nullptr;
+    }
+
+    // Try to reinitialize
+    if (!Initialize()) {
+        return false;
+    }
+
+    // Restart audio capture
+    HRESULT hr = pAudioClient->Start();
+    return SUCCEEDED(hr);
+}
+
 void AudioProcessor::ProcessAudio() {
     while (running) {
+        // Check if we need to reconnect
+        if (needsReconnect.load()) {
+            std::cout << "Audio device reconnection needed..." << std::endl;
+            if (TryReconnectDevice()) {
+                std::cout << "Audio device reconnected successfully." << std::endl;
+                needsReconnect.store(false);
+            } else {
+                std::cout << "Audio device reconnection failed, retrying in 1 second..." << std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                continue;
+            }
+        }
+
+        // Check device status and mark for reconnection if needed
+        if (!CheckDeviceStatus()) {
+            std::cout << "Audio device disconnected, marking for reconnection..." << std::endl;
+            needsReconnect.store(true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
         Sleep(1);
         UINT32 packetLength = 0;
         HRESULT hr = pCaptureClient->GetNextPacketSize(&packetLength);
-        if (FAILED(hr)) break;
+        
+        // Check for device disconnection errors
+        if (FAILED(hr)) {
+            if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+                std::cout << "Audio device invalidated, marking for reconnection..." << std::endl;
+                needsReconnect.store(true);
+                continue;
+            } else {
+                std::cout << "Unexpected error in GetNextPacketSize: " << std::hex << hr << std::endl;
+                break;
+            }
+        }
 
         while (packetLength > 0) {
             BYTE* data;
@@ -108,7 +199,17 @@ void AudioProcessor::ProcessAudio() {
                 &flags,
                 nullptr,
                 nullptr);
-            if (FAILED(hr)) break;
+            
+            if (FAILED(hr)) {
+                if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+                    std::cout << "Audio device invalidated during GetBuffer, marking for reconnection..." << std::endl;
+                    needsReconnect.store(true);
+                    break;
+                } else {
+                    std::cout << "Unexpected error in GetBuffer: " << std::hex << hr << std::endl;
+                    break;
+                }
+            }
 
             if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT)) {
                 size_t bytesPerFrame = pwfx->nBlockAlign;
@@ -118,10 +219,33 @@ void AudioProcessor::ProcessAudio() {
             }
 
             hr = pCaptureClient->ReleaseBuffer(numFramesAvailable);
-            if (FAILED(hr)) break;
+            if (FAILED(hr)) {
+                if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+                    std::cout << "Audio device invalidated during ReleaseBuffer, marking for reconnection..." << std::endl;
+                    needsReconnect.store(true);
+                    break;
+                } else {
+                    std::cout << "Unexpected error in ReleaseBuffer: " << std::hex << hr << std::endl;
+                    break;
+                }
+            }
 
             hr = pCaptureClient->GetNextPacketSize(&packetLength);
-            if (FAILED(hr)) break;
+            if (FAILED(hr)) {
+                if (hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_RESOURCES_INVALIDATED) {
+                    std::cout << "Audio device invalidated during packet size check, marking for reconnection..." << std::endl;
+                    needsReconnect.store(true);
+                    break;
+                } else {
+                    std::cout << "Unexpected error in GetNextPacketSize loop: " << std::hex << hr << std::endl;
+                    break;
+                }
+            }
+        }
+        
+        // If we marked for reconnection, continue to the next iteration
+        if (needsReconnect.load()) {
+            continue;
         }
 
         auto [left_avg, right_avg] = CalculateAvgLR();
