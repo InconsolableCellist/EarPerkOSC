@@ -29,10 +29,10 @@ EarPerkApp::~EarPerkApp() {
 }
 
 bool EarPerkApp::Initialize() {
-    // Load configuration
+    // Load configuration (create default if it doesn't exist)
     if (!config.LoadFromFile()) {
-        std::cerr << "Failed to load configuration" << std::endl;
-        return false;
+        std::cerr << "Warning: Could not load config.ini, using defaults" << std::endl;
+        // Continue with default values - don't fail initialization
     }
 
     // Initialize GLFW
@@ -139,7 +139,7 @@ void EarPerkApp::RenderUI() {
 
     ImGui::Separator();
     ImGui::SetCursorPosY(ImGui::GetWindowSize().y - 25);
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "EarPerkOSC v1.0 by Foxipso - foxipso.com");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "EarPerkOSC v1.2 by Foxipso - foxipso.com");
 
     ImGui::End();
 

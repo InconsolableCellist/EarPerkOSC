@@ -1,6 +1,14 @@
 #include "config.hpp"
 #include <inih/INIReader.h>
 #include <fstream>
+#include <iostream>
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 Config::Config()
     : address("127.0.0.1")
@@ -20,8 +28,35 @@ Config::Config()
 {
 }
 
+std::string Config::GetDefaultConfigPath() {
+#ifdef _WIN32
+    // Get %APPDATA% path
+    CHAR appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+        std::string configDir = std::string(appDataPath) + "\\EarPerkOSC";
+        
+        // Create directory if it doesn't exist
+        _mkdir(configDir.c_str());
+        
+        return configDir + "\\config.ini";
+    }
+    // Fallback to current directory
+    return "config.ini";
+#else
+    // Linux/Mac: use ~/.config/EarPerkOSC/
+    const char* home = getenv("HOME");
+    if (home) {
+        std::string configDir = std::string(home) + "/.config/EarPerkOSC";
+        mkdir(configDir.c_str(), 0755);
+        return configDir + "/config.ini";
+    }
+    return "config.ini";
+#endif
+}
+
 bool Config::CreateDefaultConfigFile(const std::string& filename) {
-    std::ofstream config_file(filename);
+    std::string configPath = filename.empty() ? GetDefaultConfigPath() : filename;
+    std::ofstream config_file(configPath);
     if (!config_file.is_open()) {
         return false;
     }
@@ -47,15 +82,23 @@ bool Config::CreateDefaultConfigFile(const std::string& filename) {
 }
 
 bool Config::LoadFromFile(const std::string& filename) {
-    INIReader reader(filename);
+    std::string configPath = filename.empty() ? GetDefaultConfigPath() : filename;
+    INIReader reader(configPath);
     if (reader.ParseError() < 0) {
-        if (!CreateDefaultConfigFile(filename)) {
+        // File doesn't exist or is corrupted, create a new default one
+        std::cout << "Config file not found or corrupted, creating default config at: " << configPath << std::endl;
+        if (!CreateDefaultConfigFile(configPath)) {
+            std::cerr << "Error: Could not create default config file at: " << configPath << std::endl;
             return false;
         }
-        reader = INIReader(filename);
+        
+        // Try to load the newly created file
+        reader = INIReader(configPath);
         if (reader.ParseError() < 0) {
+            std::cerr << "Error: Could not parse newly created config file!" << std::endl;
             return false;
         }
+        std::cout << "Default config.ini created successfully at: " << configPath << std::endl;
     }
 
     address = reader.Get("connection", "address", address);
@@ -78,7 +121,8 @@ bool Config::LoadFromFile(const std::string& filename) {
 }
 
 bool Config::SaveToFile(const std::string& filename) const {
-    std::ofstream config_file(filename);
+    std::string configPath = filename.empty() ? GetDefaultConfigPath() : filename;
+    std::ofstream config_file(configPath);
     if (!config_file.is_open()) {
         return false;
     }

@@ -52,6 +52,11 @@ You can animate them using direct and 1D blend trees. The animation clips don't 
 ## ⚙️ config.ini
 
 Your `config.ini` file will automatically be created when you run the application for the first time.
+
+**Config File Location:**
+- **Windows**: `%APPDATA%\EarPerkOSC\config.ini` (typically `C:\Users\[Username]\AppData\Roaming\EarPerkOSC\config.ini`)
+- **Linux/Mac**: `~/.config/EarPerkOSC/config.ini`
+
 Here's a complete config.ini file with an explanation of the configurable parameters:
 
 ```ini
@@ -105,8 +110,8 @@ All these parameters can be adjusted in real-time through the UI, and saved to t
 1. Download the latest release
 2. Extract all files to a directory
 3. Run EarPerkOSC.exe
-4. The config.ini file will be created on first run
-5. Adjust settings through the UI or by editing config.ini
+4. The config.ini file will be created automatically in `%APPDATA%\EarPerkOSC\` on first run
+5. Adjust settings through the UI or by editing the config file directly
 
 ## 🤝 Support
 
@@ -116,8 +121,22 @@ For Avatar prefabs, visit [foxipso.com](http://foxipso.com) or [foxipso.gumroad.
 
 ## 📅 Version History 
 
-1.0.0 - C++ rewrite with DearImGui interface (based)
-0.9.0 - Initial Rust release (cringe)
+### 1.2.0 - Enhanced Stability & Configuration
+- Fixed issue where config settings weren't saved if the installation dir was system-owned
+- Automatic config creation with better error handling
+- Volume bar scaling - threshold indicators now stay within proper range
+- Thread-safe audio device auto-reconnection
+- More robust audio device handling and error recovery
+
+### 1.0.0 - C++ rewrite with DearImGui interface
+- Rewrite in C++ w/ DearImGui because Rust cringe
+- Live volume meters and threshold visualization
+- Auto-threshold adjustment based on ambient audio
+- Differential audio detection for L/R
+- OSC integration with VRChat
+
+### 0.9.0 - Initial release
+- Initial Rust implementation
 
 ## Acknowledgements
 
@@ -125,4 +144,4 @@ Thanks to [BenacleJames](https://github.com/benaclejames/) for help with Rust an
 
 ## ⚖️ License
 
-This project is licensed under the ???
+This project is licensed under the Apache License - see the LICENSE file for details.

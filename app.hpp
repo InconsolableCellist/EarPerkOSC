@@ -33,6 +33,7 @@ private:
     void UpdateThresholds(float differential, float volume, float excessive);
     void SaveConfiguration();
     void DrawStatusText();
+    void SetWindowIcon();
 
     GLFWwindow* window;
     std::unique_ptr<AudioProcessor> audioProcessor;
@@ -46,5 +47,4 @@ private:
 
     static void WindowFocusCallback(GLFWwindow* window, int focused);
     static void WindowIconifyCallback(GLFWwindow* window, int iconified);
-    void SetWindowIcon();
 };

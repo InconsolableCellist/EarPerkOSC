@@ -8,7 +8,7 @@
 
 ; Define installer name and output file
 Name "EarPerkOSC"
-OutFile "EarPerkOSC v1.0 Setup.exe"
+OutFile "EarPerkOSC v1.2 Setup.exe"
 
 ; Default installation directory
 InstallDir "$PROGRAMFILES\EarPerkOSC"
@@ -129,10 +129,8 @@ Section "Install"
     SetOutPath "$INSTDIR"
     !ifdef DEBUG_BUILD
         File "..\x64\Debug\EarPerkOSC.exe"
-        File "..\x64\Debug\config.ini"
     !else
         File "..\x64\Release\EarPerkOSC.exe"
-        File "..\x64\Release\config.ini"
     !endif
     
     ; Optional: Include runtime DLLs if needed
@@ -156,7 +154,7 @@ Section "Install"
     WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
     WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\EarPerkOSC.exe,0"
     WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "Foxipso"
-    WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "1.0"
+    WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "1.2"
     WriteRegStr HKLM "${UNINSTKEY}" "URLInfoAbout" "https://foxipso.com"
     
     ; Get size of installation directory
@@ -169,7 +167,6 @@ SectionEnd
 Section "Uninstall"
     ; Remove application files
     Delete "$INSTDIR\EarPerkOSC.exe"
-    Delete "$INSTDIR\config.ini"
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"
     
@@ -179,6 +176,11 @@ Section "Uninstall"
     RMDir "$SMPROGRAMS\EarPerkOSC"
     Delete "$DESKTOP\EarPerkOSC.lnk"
     
+    ; Ask user if they want to remove settings (config file in AppData)
+    MessageBox MB_YESNO "Do you want to remove your EarPerkOSC settings as well?$\n$\nThis will delete your config.ini file from AppData." IDNO KeepSettings
+    RMDir /r "$APPDATA\EarPerkOSC"
+    
+    KeepSettings:
     ; Remove registry entries
     DeleteRegKey HKLM "${UNINSTKEY}"
 SectionEnd

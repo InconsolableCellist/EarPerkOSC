@@ -22,9 +22,12 @@ struct Config {
     Config();
 
     // Load configuration from file, returns true if successful
-    bool LoadFromFile(const std::string& filename = "config.ini");
+    bool LoadFromFile(const std::string& filename = "");
 
     // Create default config file if it doesn't exist
-    static bool CreateDefaultConfigFile(const std::string& filename = "config.ini");
-    bool SaveToFile(const std::string& filename = "config.ini") const;
+    static bool CreateDefaultConfigFile(const std::string& filename = "");
+    bool SaveToFile(const std::string& filename = "") const;
+
+    // Get the default config file path in AppData
+    static std::string GetDefaultConfigPath();
 };
