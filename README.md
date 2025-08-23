@@ -121,21 +121,22 @@ For Avatar prefabs, visit [foxipso.com](http://foxipso.com) or [foxipso.gumroad.
 
 ## 📅 Version History 
 
-### 1.2.0 - Enhanced Stability & Configuration
+### 1.2 - Stability 
 - Fixed issue where config settings weren't saved if the installation dir was system-owned
 - Automatic config creation with better error handling
 - Volume bar scaling - threshold indicators now stay within proper range
-- Thread-safe audio device auto-reconnection
+- Automatic audio device auto-reconnection
+- Manual audio reconnect button to the UI
 - More robust audio device handling and error recovery
 
-### 1.0.0 - C++ rewrite with DearImGui interface
+### 1.0 - C++ rewrite with DearImGui interface
 - Rewrite in C++ w/ DearImGui because Rust cringe
 - Live volume meters and threshold visualization
 - Auto-threshold adjustment based on ambient audio
 - Differential audio detection for L/R
 - OSC integration with VRChat
 
-### 0.9.0 - Initial release
+### 0.9 - Initial release
 - Initial Rust implementation
 
 ## Acknowledgements
