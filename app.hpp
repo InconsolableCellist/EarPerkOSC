@@ -7,6 +7,8 @@
 #endif
 
 #include <memory>
+#include <string>
+#include <chrono>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "audio_processor.hpp"
@@ -44,6 +46,9 @@ private:
     const int WINDOW_HEIGHT = 600;
     const char* WINDOW_TITLE = "EarPerk OSC";
     bool wasMinimized = false;
+    
+    std::string statusMessage;
+    std::chrono::steady_clock::time_point statusMessageTime;
 
     static void WindowFocusCallback(GLFWwindow* window, int focused);
     static void WindowIconifyCallback(GLFWwindow* window, int iconified);

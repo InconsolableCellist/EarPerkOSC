@@ -104,14 +104,63 @@ void AudioProcessor::Stop() {
     }
 }
 
-bool AudioProcessor::CheckDeviceStatus() {
-    if (!pDevice) return false;
+bool AudioProcessor::RestartAudio() {
+    std::cout << "Manual audio restart requested..." << std::endl;
     
+    // Stop current processing
+    Stop();
+    
+    // Clear the reconnect flag in case it was set
+    needsReconnect.store(false);
+    
+    // Force complete reinitialization (this will get the current default device)
+    if (!Initialize()) {
+        std::cerr << "Failed to reinitialize audio system!" << std::endl;
+        return false;
+    }
+    
+    // Restart processing
+    Start();
+    
+    std::cout << "Audio system restarted successfully with current default device." << std::endl;
+    return true;
+}
+
+bool AudioProcessor::CheckDeviceStatus() {
+    if (!pDevice || !pEnumerator) return false;
+    
+    // Check if current device is still active
     DWORD state;
     HRESULT hr = pDevice->GetState(&state);
     if (FAILED(hr) || state != DEVICE_STATE_ACTIVE) {
         return false;
     }
+    
+    // Check if current device is still the default
+    IMMDevice* pCurrentDefault = nullptr;
+    hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pCurrentDefault);
+    if (SUCCEEDED(hr) && pCurrentDefault) {
+        LPWSTR currentDeviceId = nullptr;
+        LPWSTR defaultDeviceId = nullptr;
+        
+        hr = pDevice->GetId(&currentDeviceId);
+        HRESULT hr2 = pCurrentDefault->GetId(&defaultDeviceId);
+        
+        bool isStillDefault = true;
+        if (SUCCEEDED(hr) && SUCCEEDED(hr2)) {
+            isStillDefault = (wcscmp(currentDeviceId, defaultDeviceId) == 0);
+        }
+        
+        if (currentDeviceId) CoTaskMemFree(currentDeviceId);
+        if (defaultDeviceId) CoTaskMemFree(defaultDeviceId);
+        pCurrentDefault->Release();
+        
+        if (!isStillDefault) {
+            std::cout << "Default audio device has changed, marking for reconnection..." << std::endl;
+            return false;
+        }
+    }
+    
     return true;
 }
 

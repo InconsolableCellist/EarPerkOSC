@@ -22,6 +22,9 @@ public:
     bool Initialize();
     void Start();
     void Stop();
+    
+    // Force a complete audio system restart (for UI button)
+    bool RestartAudio();
 
     // Getters for UI
     float GetLeftVolume() const { return current_left_vol; }

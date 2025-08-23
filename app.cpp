@@ -288,6 +288,34 @@ void EarPerkApp::DrawStatusIndicators() {
     ImGui::TextColored(overwhelmed ? warning_color : inactive_color, "Overwhelmingly Loud");
 
     ImGui::EndChild();
+    
+    ImGui::Spacing();
+    if (ImGui::Button("Reconnect Audio Device")) {
+        if (audioProcessor && audioProcessor->RestartAudio()) {
+            statusMessage = "Audio device reconnected successfully!";
+            statusMessageTime = std::chrono::steady_clock::now();
+        } else {
+            statusMessage = "Failed to reconnect audio device!";
+            statusMessageTime = std::chrono::steady_clock::now();
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Manually restart audio processing and reconnect to the current default audio device.\nUse this if audio stops working after changing audio devices.");
+    }
+    
+    // Show status message if recent
+    if (!statusMessage.empty()) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - statusMessageTime).count();
+        if (elapsed < 3) { // Show for 3 seconds
+            ImGui::Spacing();
+            ImVec4 color = statusMessage.find("successfully") != std::string::npos ? 
+                          ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+            ImGui::TextColored(color, "%s", statusMessage.c_str());
+        } else {
+            statusMessage.clear(); // Clear after 3 seconds
+        }
+    }
 }
 
 void EarPerkApp::DrawStatusText() {
