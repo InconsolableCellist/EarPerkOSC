@@ -1,7 +1,19 @@
 #include "config.hpp"
+#include "logger.hpp"
 #include <inih/INIReader.h>
 #include <fstream>
 #include <iostream>
+
+// Helper function to convert LogLevel to string
+std::string LogLevelToString(LogLevel level) {
+    switch (level) {
+        case LogLevel::LDEBUG: return "DEBUG";
+        case LogLevel::LINFO: return "INFO";
+        case LogLevel::LWARN: return "WARN";
+        case LogLevel::LERROR: return "ERROR";
+        default: return "WARN";
+    }
+}
 #ifdef _WIN32
 #include <windows.h>
 #include <shlobj.h>
@@ -25,6 +37,7 @@ Config::Config()
     , auto_excessive_threshold(false)
     , volume_threshold_multiplier(2.0f)  // 2 standard deviations above mean
     , excessive_threshold_multiplier(3.0f)  // 3 standard deviations above mean
+    , log_level(LogLevel::LWARN)  // Default to WARN level
 {
 }
 
@@ -76,18 +89,24 @@ bool Config::CreateDefaultConfigFile(const std::string& filename) {
         << "auto_volume_threshold=false\n"
         << "auto_excessive_threshold=false\n"
         << "volume_threshold_multiplier=2.0\n"
-        << "excessive_threshold_multiplier=3.0\n";
+        << "excessive_threshold_multiplier=3.0\n"
+        << "log_level=WARN\n";
 
     return true;
 }
 
 bool Config::LoadFromFile(const std::string& filename) {
     std::string configPath = filename.empty() ? GetDefaultConfigPath() : filename;
+    LOG_INFO_F("Loading configuration from: %s", configPath.c_str());
+    
     INIReader reader(configPath);
     if (reader.ParseError() < 0) {
         // File doesn't exist or is corrupted, create a new default one
+        LOG_WARN_F("Config file not found or corrupted (error: %d), creating default config at: %s", reader.ParseError(), configPath.c_str());
         std::cout << "Config file not found or corrupted, creating default config at: " << configPath << std::endl;
+        
         if (!CreateDefaultConfigFile(configPath)) {
+            LOG_ERROR_F("Could not create default config file at: %s", configPath.c_str());
             std::cerr << "Error: Could not create default config file at: " << configPath << std::endl;
             return false;
         }
@@ -95,10 +114,14 @@ bool Config::LoadFromFile(const std::string& filename) {
         // Try to load the newly created file
         reader = INIReader(configPath);
         if (reader.ParseError() < 0) {
+            LOG_ERROR_F("Could not parse newly created config file! Error: %d", reader.ParseError());
             std::cerr << "Error: Could not parse newly created config file!" << std::endl;
             return false;
         }
+        LOG_INFO_F("Default config.ini created successfully at: %s", configPath.c_str());
         std::cout << "Default config.ini created successfully at: " << configPath << std::endl;
+    } else {
+        LOG_INFO("Configuration file loaded successfully");
     }
 
     address = reader.Get("connection", "address", address);
@@ -116,6 +139,25 @@ bool Config::LoadFromFile(const std::string& filename) {
     auto_excessive_threshold = reader.GetBoolean("audio", "auto_excessive_threshold", auto_excessive_threshold);
     volume_threshold_multiplier = reader.GetFloat("audio", "volume_threshold_multiplier", volume_threshold_multiplier);
     excessive_threshold_multiplier = reader.GetFloat("audio", "excessive_threshold_multiplier", excessive_threshold_multiplier);
+
+    // Load log level safely
+    try {
+        std::string logLevelStr = reader.Get("audio", "log_level", "WARN");
+        if (logLevelStr == "DEBUG") {
+            log_level = LogLevel::LDEBUG;
+        } else if (logLevelStr == "INFO") {
+            log_level = LogLevel::LINFO;
+        } else if (logLevelStr == "WARN") {
+            log_level = LogLevel::LWARN;
+        } else if (logLevelStr == "ERROR") {
+            log_level = LogLevel::LERROR;
+        } else {
+            log_level = LogLevel::LWARN; // Default fallback
+        }
+    } catch (...) {
+        // If anything goes wrong loading log level, use safe default
+        log_level = LogLevel::LWARN;
+    }
 
     return true;
 }
@@ -142,7 +184,8 @@ bool Config::SaveToFile(const std::string& filename) const {
         << "auto_volume_threshold=" << (auto_volume_threshold ? "true" : "false") << "\n"
         << "auto_excessive_threshold=" << (auto_excessive_threshold ? "true" : "false") << "\n"
         << "volume_threshold_multiplier=" << volume_threshold_multiplier << "\n"
-        << "excessive_threshold_multiplier=" << excessive_threshold_multiplier << "\n";
+        << "excessive_threshold_multiplier=" << excessive_threshold_multiplier << "\n"
+        << "log_level=" << LogLevelToString(log_level) << "\n";
 
     return true;
 }

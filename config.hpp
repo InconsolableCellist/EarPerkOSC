@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "logger.hpp"
 
 struct Config {
     std::string address;
@@ -9,8 +10,9 @@ struct Config {
     std::string address_overwhelmingly_loud;
     bool auto_volume_threshold;
     bool auto_excessive_threshold;
-    float volume_threshold_multiplier;  // How many std devs above mean
-    float excessive_threshold_multiplier;  // How many std devs above mean
+    float volume_threshold_multiplier;
+    float excessive_threshold_multiplier;
+    LogLevel log_level;
 
     float differential_threshold;
     float volume_threshold;

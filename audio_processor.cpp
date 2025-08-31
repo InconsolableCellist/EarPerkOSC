@@ -1,6 +1,9 @@
 #include "audio_processor.hpp"
+#include "logger.hpp"
 #include <functional>
 #include <iostream>
+#include <vector>
+#include <tuple>
 
 AudioProcessor::AudioProcessor(Config& config)
     : pEnumerator(nullptr)
@@ -18,21 +21,28 @@ AudioProcessor::AudioProcessor(Config& config)
     , current_left_vol(0.0f)
     , current_right_vol(0.0f)
 {
+    LOG_DEBUG("AudioProcessor constructor called");
     last_left_message_timestamp = std::chrono::steady_clock::now();
     last_right_message_timestamp = std::chrono::steady_clock::now();
     last_overwhelm_timestamp = std::chrono::steady_clock::now();
+    LOG_DEBUG("AudioProcessor constructor completed");
 }
 
 AudioProcessor::~AudioProcessor() {
+    LOG_DEBUG("AudioProcessor destructor called");
     Stop();
     if (pCaptureClient) pCaptureClient->Release();
     if (pAudioClient) pAudioClient->Release();
     if (pDevice) pDevice->Release();
     if (pEnumerator) pEnumerator->Release();
     if (pwfx) CoTaskMemFree(pwfx);
+    LOG_DEBUG("AudioProcessor destructor completed");
 }
 
 bool AudioProcessor::Initialize() {
+    LOG_INFO("Initializing AudioProcessor");
+    
+    LOG_DEBUG("Cleaning up existing audio interfaces");
     if (pCaptureClient) pCaptureClient->Release();
     if (pAudioClient) pAudioClient->Release();
     if (pDevice) pDevice->Release();
@@ -49,24 +59,53 @@ bool AudioProcessor::Initialize() {
     const UINT32 REFTIMES_PER_SEC = 10000000;
     const REFERENCE_TIME BUFFER_DURATION = REFTIMES_PER_SEC / 100; // 10ms buffer
 
+    LOG_DEBUG("Initializing COM");
     HRESULT hr = CoInitializeEx(nullptr, COINIT_SPEED_OVER_MEMORY);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+        // RPC_E_CHANGED_MODE means COM is already initialized with a different threading model
+        // This is not a critical error, we can continue
+        LOG_ERROR_F("Failed to initialize COM: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("COM initialized successfully");
 
+    LOG_DEBUG("Creating MMDeviceEnumerator");
     hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to create MMDeviceEnumerator: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("MMDeviceEnumerator created successfully");
 
+    LOG_DEBUG("Getting default audio endpoint");
     hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to get default audio endpoint: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("Default audio endpoint acquired successfully");
 
+    LOG_DEBUG("Activating audio client");
     hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL,
         nullptr, (void**)&pAudioClient);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to activate audio client: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("Audio client activated successfully");
 
+    LOG_DEBUG("Getting audio mix format");
     hr = pAudioClient->GetMixFormat(&pwfx);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to get mix format: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG_F("Audio format: %d channels, %d Hz, %d bits", pwfx->nChannels, pwfx->nSamplesPerSec, pwfx->wBitsPerSample);
 
+    // Try to initialize with the mix format first
+    LOG_DEBUG("Initializing audio client for loopback capture");
     hr = pAudioClient->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
         AUDCLNT_STREAMFLAGS_LOOPBACK,
@@ -74,21 +113,143 @@ bool AudioProcessor::Initialize() {
         0,
         pwfx,
         nullptr);
-    if (FAILED(hr)) return false;
+        
+    // If the mix format is not supported, try fallback formats
+    if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
+        LOG_DEBUG("Mix format not supported for loopback, trying fallback formats");
+        
+        // Free the original format
+        CoTaskMemFree(pwfx);
+        pwfx = nullptr;
+        
+        // Try common fallback formats that are usually supported
+        std::vector<std::tuple<DWORD, DWORD, WORD>> fallbackFormats = {
+            {44100, 2, 16},  // 44.1kHz, 2 channels, 16-bit
+            {48000, 2, 16},  // 48kHz, 2 channels, 16-bit  
+            {44100, 2, 24},  // 44.1kHz, 2 channels, 24-bit
+            {48000, 2, 24},  // 48kHz, 2 channels, 24-bit
+            {44100, 2, 32},  // 44.1kHz, 2 channels, 32-bit
+            {48000, 2, 32}   // 48kHz, 2 channels, 32-bit
+        };
+        
+        bool formatFound = false;
+        for (const auto& [sampleRate, channels, bitsPerSample] : fallbackFormats) {
+            // Create a new format structure
+            pwfx = (WAVEFORMATEX*)CoTaskMemAlloc(sizeof(WAVEFORMATEX));
+            if (!pwfx) {
+                LOG_ERROR("Failed to allocate memory for audio format");
+                return false;
+            }
+            
+            pwfx->wFormatTag = WAVE_FORMAT_PCM;
+            pwfx->nChannels = channels;
+            pwfx->nSamplesPerSec = sampleRate;
+            pwfx->wBitsPerSample = bitsPerSample;
+            pwfx->nBlockAlign = (channels * bitsPerSample) / 8;
+            pwfx->nAvgBytesPerSec = sampleRate * pwfx->nBlockAlign;
+            pwfx->cbSize = 0;
+            
+            LOG_DEBUG_F("Trying fallback format: %d channels, %d Hz, %d bits", 
+                       pwfx->nChannels, pwfx->nSamplesPerSec, pwfx->wBitsPerSample);
+            
+            // Check if this format is supported
+            WAVEFORMATEX* pClosestMatch = nullptr;
+            hr = pAudioClient->IsFormatSupported(
+                AUDCLNT_SHAREMODE_SHARED,
+                pwfx,
+                &pClosestMatch);
+                
+            if (hr == S_OK) {
+                // Format is supported exactly, try to initialize
+                hr = pAudioClient->Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    AUDCLNT_STREAMFLAGS_LOOPBACK,
+                    BUFFER_DURATION,
+                    0,
+                    pwfx,
+                    nullptr);
+                    
+                if (SUCCEEDED(hr)) {
+                    LOG_DEBUG_F("Successfully initialized with fallback format: %d channels, %d Hz, %d bits", 
+                               pwfx->nChannels, pwfx->nSamplesPerSec, pwfx->wBitsPerSample);
+                    formatFound = true;
+                    break;
+                }
+            } else if (hr == S_FALSE && pClosestMatch) {
+                // Format is not supported exactly, but a close match was suggested
+                LOG_DEBUG_F("Trying closest match format: %d channels, %d Hz, %d bits", 
+                           pClosestMatch->nChannels, pClosestMatch->nSamplesPerSec, pClosestMatch->wBitsPerSample);
+                
+                // Free our format and use the suggested one
+                CoTaskMemFree(pwfx);
+                pwfx = pClosestMatch;
+                
+                hr = pAudioClient->Initialize(
+                    AUDCLNT_SHAREMODE_SHARED,
+                    AUDCLNT_STREAMFLAGS_LOOPBACK,
+                    BUFFER_DURATION,
+                    0,
+                    pwfx,
+                    nullptr);
+                    
+                if (SUCCEEDED(hr)) {
+                    LOG_DEBUG_F("Successfully initialized with closest match format: %d channels, %d Hz, %d bits", 
+                               pwfx->nChannels, pwfx->nSamplesPerSec, pwfx->wBitsPerSample);
+                    formatFound = true;
+                    break;
+                }
+            } else {
+                // Clean up the suggested format if any
+                if (pClosestMatch) {
+                    CoTaskMemFree(pClosestMatch);
+                }
+            }
+            
+            // This format didn't work, free it and try the next one
+            CoTaskMemFree(pwfx);
+            pwfx = nullptr;
+        }
+        
+        if (!formatFound) {
+            LOG_ERROR("No supported audio format found for loopback capture");
+            return false;
+        }
+    } else if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to initialize audio client: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("Audio client initialized successfully");
 
+    LOG_DEBUG("Getting audio capture client service");
     hr = pAudioClient->GetService(
         __uuidof(IAudioCaptureClient),
         (void**)&pCaptureClient);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to get audio capture client: 0x%08X", hr);
+        return false;
+    }
+    LOG_DEBUG("Audio capture client acquired successfully");
 
+    LOG_INFO("AudioProcessor initialization completed successfully");
     return true;
 }
 
 void AudioProcessor::Start() {
     if (!running) {
+        LOG_INFO("Starting audio processor");
         running = true;
-        pAudioClient->Start();
+        
+        HRESULT hr = pAudioClient->Start();
+        if (FAILED(hr)) {
+            LOG_ERROR_F("Failed to start audio client: 0x%08X", hr);
+            running = false;
+            return;
+        }
+        LOG_DEBUG("Audio client started successfully");
+        
+        LOG_DEBUG("Starting audio processing thread");
         audioThread = std::thread(&AudioProcessor::ProcessAudio, this);
+        LOG_INFO("Audio processor started successfully");
     }
 }
 

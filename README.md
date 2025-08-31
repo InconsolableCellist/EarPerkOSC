@@ -73,6 +73,11 @@ volume_threshold=0.165
 excessive_volume_threshold=0.234
 reset_timeout_ms=1000
 timeout_ms=100
+auto_volume_threshold=false
+auto_excessive_threshold=false
+volume_threshold_multiplier=2.0
+excessive_threshold_multiplier=3.0
+log_level=WARN
 ```
 
 * `address` and `port` are the address and port of the OSC server you're sending to (VRChat)
@@ -83,6 +88,11 @@ timeout_ms=100
 * `excessive_volume_threshold` is the volume level that triggers protective ear folding
 * `reset_timeout_ms` is the delay before unperking ears after sound stops
 * `timeout_ms` is the minimum delay between ear perk attempts
+* `auto_volume_threshold` enables automatic volume threshold adjustment based on ambient audio
+* `auto_excessive_threshold` enables automatic excessive volume threshold adjustment
+* `volume_threshold_multiplier` sets how many standard deviations above mean for auto volume threshold
+* `excessive_threshold_multiplier` sets how many standard deviations above mean for auto excessive threshold
+* `log_level` sets the logging verbosity (DEBUG, INFO, WARN, or ERROR)
 
 All these parameters can be adjusted in real-time through the UI, and saved to the config file.
 
@@ -120,6 +130,10 @@ For support, please visit [foxipso.com](http://foxipso.com)
 For Avatar prefabs, visit [foxipso.com](http://foxipso.com) or [foxipso.gumroad.com](https://foxipso.gumroad.com)
 
 ## 📅 Version History 
+
+### 1.3 - Logging 
+- Added logging (%appdata%/EarPerkOSC/EarPerkOSC.log)
+- Bugfix where systems that don't support 96 kHz would crash
 
 ### 1.2 - Stability 
 - Fixed issue where config settings weren't saved if the installation dir was system-owned

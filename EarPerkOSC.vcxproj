@@ -147,6 +147,7 @@
     <ClCompile Include="audio_processor.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="glad.c" />
+    <ClCompile Include="logger.cpp" />
     <ClCompile Include="imgui\backends\imgui_impl_glfw.cpp" />
     <ClCompile Include="imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
@@ -161,6 +162,7 @@
     <ClInclude Include="app.hpp" />
     <ClInclude Include="audio_processor.hpp" />
     <ClInclude Include="config.hpp" />
+    <ClInclude Include="logger.hpp" />
     <ClInclude Include="imgui\backends\imgui_impl_glfw.h" />
     <ClInclude Include="imgui\backends\imgui_impl_opengl3.h" />
     <ClInclude Include="imgui\imconfig.h" />

@@ -8,7 +8,7 @@
 
 ; Define installer name and output file
 Name "EarPerkOSC"
-OutFile "EarPerkOSC v1.2 Setup.exe"
+OutFile "EarPerkOSC v1.3 Setup.exe"
 
 ; Default installation directory
 InstallDir "$PROGRAMFILES\EarPerkOSC"
@@ -154,7 +154,7 @@ Section "Install"
     WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
     WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\EarPerkOSC.exe,0"
     WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "Foxipso"
-    WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "1.2"
+    WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "1.3"
     WriteRegStr HKLM "${UNINSTKEY}" "URLInfoAbout" "https://foxipso.com"
     
     ; Get size of installation directory

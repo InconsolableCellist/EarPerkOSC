@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "logger.hpp"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
@@ -11,85 +12,186 @@
 #endif
 
 EarPerkApp::EarPerkApp() : window(nullptr) {
-	ImGui::SetCurrentContext(nullptr);  // Ensure no context exists before creation
+	try {
+		LOG_DEBUG("EarPerkApp constructor called");
+	} catch (...) {
+		// If logging fails during construction, continue silently
+	}
+	
+	try {
+		ImGui::SetCurrentContext(nullptr);  // Ensure no context exists before creation
+		LOG_DEBUG("ImGui context cleared");
+	} catch (...) {
+		// If ImGui or logging fails, continue silently
+	}
 }
 
 EarPerkApp::~EarPerkApp() {
-    // Save configuration before shutting down
-    SaveConfiguration();
-    
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    try {
+        LOG_DEBUG("EarPerkApp destructor called");
+        
+        // Save configuration before shutting down
+        LOG_DEBUG("Saving configuration before shutdown");
+        try {
+            SaveConfiguration();
+            LOG_DEBUG("Configuration saved successfully");
+        } catch (const std::exception& e) {
+            LOG_ERROR_F("Exception saving configuration: %s", e.what());
+        } catch (...) {
+            LOG_ERROR("Unknown exception saving configuration");
+        }
+        
+        LOG_DEBUG("Shutting down ImGui");
+        // Shutdown ImGui backends in correct order
+        if (ImGui::GetCurrentContext()) {
+            ImGui_ImplOpenGL3_Shutdown();
+            ImGui_ImplGlfw_Shutdown();
+            ImGui::DestroyContext();
+        }
 
-    if (window) {
-        glfwDestroyWindow(window);
+        if (window) {
+            LOG_DEBUG("Destroying GLFW window");
+            glfwDestroyWindow(window);
+        }
+        
+        LOG_DEBUG("Terminating GLFW");
+        glfwTerminate();
+        
+        LOG_DEBUG("EarPerkApp destructor completed");
     }
-    glfwTerminate();
+    catch (...) {
+        // Ensure destructor doesn't throw
+        try {
+            // Cleanup ImGui first if it exists
+            if (ImGui::GetCurrentContext()) {
+                ImGui_ImplOpenGL3_Shutdown();
+                ImGui_ImplGlfw_Shutdown();
+                ImGui::DestroyContext();
+            }
+            if (window) {
+                glfwDestroyWindow(window);
+            }
+            glfwTerminate();
+        }
+        catch (...) {
+            // Final cleanup attempt, ignore all errors
+        }
+    }
 }
 
 bool EarPerkApp::Initialize() {
+    LOG_INFO("Starting EarPerkApp initialization");
+    
     // Load configuration (create default if it doesn't exist)
-    if (!config.LoadFromFile()) {
-        std::cerr << "Warning: Could not load config.ini, using defaults" << std::endl;
-        // Continue with default values - don't fail initialization
+    LOG_INFO("Loading configuration file");
+    bool configLoaded = false;
+    try {
+        configLoaded = config.LoadFromFile();
+        if (!configLoaded) {
+            LOG_WARN("Could not load config.ini, using defaults");
+            std::cerr << "Warning: Could not load config.ini, using defaults" << std::endl;
+            // Continue with default values - don't fail initialization
+        } else {
+            LOG_INFO("Configuration loaded successfully");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("Exception loading configuration: %s", e.what());
+        std::cerr << "Exception loading configuration: " << e.what() << std::endl;
+        return false;
+    } catch (...) {
+        LOG_ERROR("Unknown exception loading configuration");
+        std::cerr << "Unknown exception loading configuration" << std::endl;
+        return false;
     }
+    
+    // Apply log level from configuration immediately after loading
+    Logger::getInstance().SetLevel(config.log_level);
 
     // Initialize GLFW
+    LOG_INFO("Initializing GLFW");
     if (!glfwInit()) {
+        LOG_ERROR("Failed to initialize GLFW");
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return false;
     }
+    LOG_INFO("GLFW initialized successfully");
 
     // Create window with graphics context
+    LOG_INFO("Setting up OpenGL context");
     const char* glsl_version = "#version 130";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
+    LOG_INFO_F("Creating GLFW window (%dx%d): %s", WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE);
     window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, nullptr, nullptr);
     if (!window) {
+        LOG_ERROR("Failed to create GLFW window");
         std::cerr << "Failed to create GLFW window" << std::endl;
         return false;
     }
+    LOG_INFO("GLFW window created successfully");
 
     // Set window icon
+    LOG_INFO("Setting window icon");
     SetWindowIcon();
 
+    LOG_INFO("Making OpenGL context current");
     glfwMakeContextCurrent(window);
+    
+    LOG_INFO("Initializing GLAD");
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        LOG_ERROR("Failed to initialize GLAD");
         std::cerr << "Failed to initialize GLAD" << std::endl;
         return false;
     }
+    LOG_INFO("GLAD initialized successfully");
+    
+    LOG_INFO("Enabling VSync");
     glfwSwapInterval(1); // Enable vsync
 
     // Initialize Dear ImGui
+    LOG_INFO("Initializing Dear ImGui");
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     // Setup Platform/Renderer backends
+    LOG_INFO("Setting up ImGui backends");
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
+    LOG_INFO("Setting up ImGui style");
     SetupImGuiStyle();
+    LOG_INFO("Dear ImGui initialized successfully");
 
     // Initialize audio processor
+    LOG_INFO("Creating audio processor");
     audioProcessor = std::make_unique<AudioProcessor>(std::ref(config));
+    
+    LOG_INFO("Initializing audio processor");
     if (!audioProcessor->Initialize()) {
+        LOG_ERROR("Failed to initialize audio processor");
         std::cerr << "Failed to initialize audio processor" << std::endl;
         return false;
     }
+    LOG_INFO("Audio processor initialized successfully");
 
+    LOG_INFO("Setting up GLFW window callbacks");
     glfwSetWindowUserPointer(window, this);
     glfwSetWindowFocusCallback(window, WindowFocusCallback);
     glfwSetWindowIconifyCallback(window, WindowIconifyCallback);
 
+    LOG_INFO("Starting audio processor");
     audioProcessor->Start();
+    
+    LOG_INFO("EarPerkApp initialization completed successfully");
     return true;
 }
 
 void EarPerkApp::Run() {
+    LOG_INFO("Starting main application loop");
+    
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -107,6 +209,8 @@ void EarPerkApp::Run() {
 
         glfwSwapBuffers(window);
     }
+    
+    LOG_INFO("Main application loop ended");
 }
 
 void EarPerkApp::RenderUI() {
@@ -115,19 +219,20 @@ void EarPerkApp::RenderUI() {
     ImGui::NewFrame();
 
     // Set up main window with proper flags
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse |
+    ImGuiWindowFlags window_flags = static_cast<ImGuiWindowFlags>(
+        ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoTitleBar | // Add this to remove title bar
-        ImGuiWindowFlags_NoBringToFrontOnFocus; // Add this to prevent window from floating
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // Get the GLFW window size
     int width, height;
     glfwGetWindowSize(window, &width, &height);
 
     // Set the window position to (0,0) and size to full window
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImVec2(width, height));
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
 
     ImGui::Begin("EarPerk OSC", nullptr, window_flags);
 
@@ -139,7 +244,7 @@ void EarPerkApp::RenderUI() {
 
     ImGui::Separator();
     ImGui::SetCursorPosY(ImGui::GetWindowSize().y - 25);
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "EarPerkOSC v1.2 by Foxipso - foxipso.com");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "EarPerkOSC v1.3 by Foxipso - foxipso.com");
 
     ImGui::End();
 
@@ -165,7 +270,7 @@ void EarPerkApp::DrawVolumeMeters() {
     
     ImGui::Text("Left Channel"); 
     ImVec2 pos = ImGui::GetCursorPos();
-    ImGui::ProgressBar(left_vol, ImVec2(-1, 20));
+    ImGui::ProgressBar(left_vol, ImVec2(-1.0f, 20.0f));
     
     // Draw threshold markers
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -189,7 +294,7 @@ void EarPerkApp::DrawVolumeMeters() {
 
     // Repeat for right channel
     ImGui::Text("Right Channel");
-    ImGui::ProgressBar(right_vol, ImVec2(-1, 20));
+    ImGui::ProgressBar(right_vol, ImVec2(-1.0f, 20.0f));
     
     bar_start = ImGui::GetItemRectMin();
     bar_end = ImGui::GetItemRectMax();
@@ -269,7 +374,7 @@ void EarPerkApp::DrawStatusIndicators() {
     static const ImVec4 warning_color(1.0f, 0.0f, 0.0f, 1.0f);
 
     // Create a child window with fixed size
-    ImGui::BeginChild("StatusChild", ImVec2(TEXT_WIDTH, 80), true,
+    ImGui::BeginChild("StatusChild", ImVec2(TEXT_WIDTH, 80.0f), true,
         ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollbar);
 
     // Draw each status with proper spacing
@@ -364,6 +469,21 @@ void EarPerkApp::DrawConfigurationPanel() {
         }
 
         ImGui::Separator();
+        ImGui::Text("Logging");
+
+        // Log Level dropdown
+        const char* logLevelItems[] = { "DEBUG", "INFO", "WARN", "ERROR" };
+        int currentLogLevel = static_cast<int>(config.log_level);
+        if (ImGui::Combo("Log Level", &currentLogLevel, logLevelItems, 4)) {
+            config.log_level = static_cast<LogLevel>(currentLogLevel);
+            Logger::getInstance().SetLevel(config.log_level);
+            SaveConfiguration(); // Auto-save when log level changes
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Set the minimum logging level\nDEBUG: Most verbose\nINFO: General information\nWARN: Warnings and errors (recommended)\nERROR: Only errors");
+        }
+
+        ImGui::Separator();
         ImGui::Text("Thresholds");
 
         bool changed = false;
@@ -451,8 +571,8 @@ void EarPerkApp::SetupImGuiStyle() {
     colors[ImGuiCol_ButtonActive] = ImVec4(0.39f, 0.39f, 0.39f, 1.00f);
 
     // Spacing and sizes
-    style.ItemSpacing = ImVec2(8, 4);
-    style.FramePadding = ImVec2(4, 3);
+    style.ItemSpacing = ImVec2(8.0f, 4.0f);
+    style.FramePadding = ImVec2(4.0f, 3.0f);
 }
 
 void EarPerkApp::UpdateThresholds(float differential, float volume, float excessive) {
@@ -473,14 +593,19 @@ void EarPerkApp::SaveConfiguration() {
 void EarPerkApp::WindowFocusCallback(GLFWwindow* window, int focused) {
     auto* app = static_cast<EarPerkApp*>(glfwGetWindowUserPointer(window));
     if (focused && app->wasMinimized) {
-        // Reinitialize ImGui
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
+        // Reinitialize ImGui safely
+        if (ImGui::GetCurrentContext()) {
+            ImGui_ImplOpenGL3_Shutdown();
+            ImGui_ImplGlfw_Shutdown();
+            ImGui::DestroyContext();
+        }
 
         ImGui::CreateContext();
         ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 130");
+        
+        // Reapply the ImGui style
+        app->SetupImGuiStyle();
 
         app->wasMinimized = false;
     }
