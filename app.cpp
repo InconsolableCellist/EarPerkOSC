@@ -11,7 +11,9 @@
 #include <GLFW/glfw3native.h>
 #endif
 
-EarPerkApp::EarPerkApp() : window(nullptr) {
+EarPerkApp::EarPerkApp() 
+    : window(nullptr)
+    , lastDeviceRefresh(std::chrono::steady_clock::now() - std::chrono::seconds(10)) { // Force initial refresh
 	try {
 		LOG_DEBUG("EarPerkApp constructor called");
 	} catch (...) {
@@ -93,6 +95,7 @@ bool EarPerkApp::Initialize() {
             // Continue with default values - don't fail initialization
         } else {
             LOG_INFO("Configuration loaded successfully");
+            LOG_DEBUG_F("Loaded selected device ID: '%s'", config.selected_device_id.c_str());
         }
     } catch (const std::exception& e) {
         LOG_ERROR_F("Exception loading configuration: %s", e.what());
@@ -169,21 +172,21 @@ bool EarPerkApp::Initialize() {
     LOG_INFO("Creating audio processor");
     audioProcessor = std::make_unique<AudioProcessor>(std::ref(config));
     
-    LOG_INFO("Initializing audio processor");
+    LOG_INFO("Attempting to initialize audio processor");
     if (!audioProcessor->Initialize()) {
-        LOG_ERROR("Failed to initialize audio processor");
-        std::cerr << "Failed to initialize audio processor" << std::endl;
-        return false;
+        LOG_WARN("Failed to initialize audio processor on startup - UI will still load");
+        std::cout << "Warning: Failed to initialize audio processor - you can still use the UI to select a different device" << std::endl;
+        // Don't return false - continue with UI initialization
+    } else {
+        LOG_INFO("Audio processor initialized successfully");
+        LOG_INFO("Starting audio processor");
+        audioProcessor->Start();
     }
-    LOG_INFO("Audio processor initialized successfully");
 
     LOG_INFO("Setting up GLFW window callbacks");
     glfwSetWindowUserPointer(window, this);
     glfwSetWindowFocusCallback(window, WindowFocusCallback);
     glfwSetWindowIconifyCallback(window, WindowIconifyCallback);
-
-    LOG_INFO("Starting audio processor");
-    audioProcessor->Start();
     
     LOG_INFO("EarPerkApp initialization completed successfully");
     return true;
@@ -239,6 +242,7 @@ void EarPerkApp::RenderUI() {
     DrawVolumeMeters();
     ImGui::Separator();
     DrawStatusIndicators();
+    DrawAudioDeviceSelection();
     DrawConfigurationPanel();
     DrawStatusText();
 
@@ -374,15 +378,23 @@ void EarPerkApp::DrawStatusIndicators() {
     static const ImVec4 warning_color(1.0f, 0.0f, 0.0f, 1.0f);
 
     // Create a child window with fixed size
-    ImGui::BeginChild("StatusChild", ImVec2(TEXT_WIDTH, 80.0f), true,
+    ImGui::BeginChild("StatusChild", ImVec2(TEXT_WIDTH, 100.0f), true,
         ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollbar);
 
     // Draw each status with proper spacing
     ImGui::Spacing();
 
+    bool audio_working = audioProcessor && audioProcessor->IsAudioWorking();
     bool left_perked = audioProcessor && audioProcessor->IsLeftPerked();
     bool right_perked = audioProcessor && audioProcessor->IsRightPerked();
     bool overwhelmed = audioProcessor && audioProcessor->IsOverwhelmed();
+
+    if (!audio_working) {
+        ImGui::TextColored(warning_color, "Audio: Not Working");
+    } else {
+        ImGui::TextColored(active_color, "Audio: Working");
+    }
+    ImGui::Spacing();
 
     ImGui::TextColored(left_perked ? active_color : inactive_color, "Left Ear Perked");
     ImGui::Spacing();
@@ -419,6 +431,151 @@ void EarPerkApp::DrawStatusIndicators() {
             ImGui::TextColored(color, "%s", statusMessage.c_str());
         } else {
             statusMessage.clear(); // Clear after 3 seconds
+        }
+    }
+}
+
+void EarPerkApp::DrawAudioDeviceSelection() {
+    if (!ImGui::CollapsingHeader("Audio Device Selection", ImGuiTreeNodeFlags_DefaultOpen)) {
+        return;
+    }
+    
+    if (!audioProcessor) {
+        ImGui::Text("Audio processor not initialized");
+        return;
+    }
+    
+    // Show warning if audio is not working (use a stable height to prevent UI jumping)
+    if (!audioProcessor->IsAudioWorking()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.0f, 1.0f)); // Orange
+        ImGui::Text("⚠ Audio initialization failed - select a different device below");
+        ImGui::PopStyleColor();
+    } else {
+        // Reserve the same space when audio is working to prevent UI jumping
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Audio is working properly");
+    }
+    ImGui::Spacing();
+    
+    // Get available devices (with caching to prevent UI flickering)
+    auto now = std::chrono::steady_clock::now();
+    auto timeSinceRefresh = std::chrono::duration_cast<std::chrono::seconds>(now - lastDeviceRefresh);
+    
+    // Refresh device list every 2 seconds or if cache is empty
+    if (cachedDevices.empty() || timeSinceRefresh.count() > 2) {
+        cachedDevices = audioProcessor->GetAvailableDevices();
+        lastDeviceRefresh = now;
+    }
+    
+    auto& devices = cachedDevices;
+    std::string currentDeviceId = audioProcessor->GetCurrentDeviceId();
+    std::string currentDeviceName = audioProcessor->GetCurrentDeviceName();
+    
+    // Show current device
+    ImGui::Text("Current Device:");
+    ImGui::Indent();
+    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", currentDeviceName.c_str());
+    ImGui::Unindent();
+    ImGui::Spacing();
+    
+    // Device selection dropdown
+    ImGui::Text("Select Audio Device:");
+    
+    // Create list of device names for combo
+    std::vector<std::string> deviceNames;
+    std::vector<std::string> deviceIds;
+    int currentSelection = -1;
+    
+    // Add "Default Device" option
+    deviceNames.push_back("Use Default Device");
+    deviceIds.push_back("");
+    if (config.selected_device_id.empty()) {
+        currentSelection = 0;
+    }
+    
+    // Add all available devices
+    for (size_t i = 0; i < devices.size(); i++) {
+        std::string displayName = devices[i].name;
+        if (devices[i].isDefault) {
+            displayName += " (System Default)";
+        }
+        deviceNames.push_back(displayName);
+        deviceIds.push_back(devices[i].id);
+        
+        if (config.selected_device_id == devices[i].id) {
+            currentSelection = static_cast<int>(i + 1);
+        }
+    }
+    
+    // Convert to char* array for ImGui
+    std::vector<const char*> deviceNamesCStr;
+    for (const auto& name : deviceNames) {
+        deviceNamesCStr.push_back(name.c_str());
+    }
+    
+    if (ImGui::Combo("##DeviceSelection", &currentSelection, deviceNamesCStr.data(), 
+                     static_cast<int>(deviceNamesCStr.size()))) {
+        if (currentSelection >= 0 && currentSelection < static_cast<int>(deviceIds.size())) {
+            std::string selectedId = deviceIds[currentSelection];
+            
+            // Show immediate feedback
+            statusMessage = "Changing audio device...";
+            statusMessageTime = std::chrono::steady_clock::now();
+            
+            if (audioProcessor->SetSelectedDevice(selectedId)) {
+                statusMessage = "Audio device changed successfully!";
+                statusMessageTime = std::chrono::steady_clock::now();
+                SaveConfiguration(); // Save the new device selection
+            } else {
+                statusMessage = "Failed to change audio device! Try a different device.";
+                statusMessageTime = std::chrono::steady_clock::now();
+            }
+        }
+    }
+    
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Select the audio device to capture from.\n\n"
+                         "For VoiceMeeter users:\n"
+                         "• VoiceMeeter Output devices (A1, B1, etc.): Mixed audio from VoiceMeeter\n"
+                         "• VoiceMeeter Input devices (VAIO, AUX, etc.): Virtual microphones\n"
+                         "• All VoiceMeeter devices use direct capture (no loopback needed)\n\n"
+                         "Tip: Choose the VoiceMeeter output that matches your routing setup");
+    }
+    
+    ImGui::Spacing();
+    if (ImGui::Button("Refresh Device List")) {
+        // Force immediate refresh of device cache
+        cachedDevices = audioProcessor->GetAvailableDevices();
+        lastDeviceRefresh = std::chrono::steady_clock::now();
+        statusMessage = "Device list refreshed!";
+        statusMessageTime = std::chrono::steady_clock::now();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Refresh the list of available audio devices.\nUse this if you've connected/disconnected audio devices.");
+    }
+    
+    // Check if any VoiceMeeter devices are available and show troubleshooting if none found
+    bool hasVoiceMeeterDevice = false;
+    for (const auto& device : devices) {
+        if (device.name.find("VoiceMeeter") != std::string::npos || 
+            device.name.find("VAIO") != std::string::npos ||
+            device.name.find("VB-Audio") != std::string::npos) {
+            hasVoiceMeeterDevice = true;
+            break;
+        }
+    }
+    
+    if (!hasVoiceMeeterDevice && !devices.empty()) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.0f, 1.0f)); // Orange
+        ImGui::Text("⚠ No VoiceMeeter virtual devices found");
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("If you're using VoiceMeeter:\n"
+                             "1. Ensure VoiceMeeter is running\n"
+                             "2. Check Windows Sound settings > Recording tab\n"
+                             "3. Enable VoiceMeeter VAIO/Output devices\n"
+                             "4. Set a VoiceMeeter device as default recording device\n"
+                             "5. Click 'Refresh Device List' after making changes");
         }
     }
 }
@@ -587,7 +744,13 @@ void EarPerkApp::UpdateThresholds(float differential, float volume, float excess
 }
 
 void EarPerkApp::SaveConfiguration() {
-    config.SaveToFile();
+    LOG_DEBUG_F("Saving configuration with selected device ID: '%s'", config.selected_device_id.c_str());
+    bool saved = config.SaveToFile();
+    if (saved) {
+        LOG_DEBUG("Configuration saved successfully");
+    } else {
+        LOG_ERROR("Failed to save configuration");
+    }
 }
 
 void EarPerkApp::WindowFocusCallback(GLFWwindow* window, int focused) {

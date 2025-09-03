@@ -31,6 +31,7 @@ private:
     void SetupImGuiStyle();
     void DrawVolumeMeters();
     void DrawStatusIndicators();
+    void DrawAudioDeviceSelection();
     void DrawConfigurationPanel();
     void UpdateThresholds(float differential, float volume, float excessive);
     void SaveConfiguration();
@@ -49,6 +50,10 @@ private:
     
     std::string statusMessage;
     std::chrono::steady_clock::time_point statusMessageTime;
+    
+    // Cache for device enumeration to prevent UI flickering
+    std::vector<AudioProcessor::AudioDevice> cachedDevices;
+    std::chrono::steady_clock::time_point lastDeviceRefresh;
 
     static void WindowFocusCallback(GLFWwindow* window, int focused);
     static void WindowIconifyCallback(GLFWwindow* window, int iconified);

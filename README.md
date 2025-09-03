@@ -78,6 +78,7 @@ auto_excessive_threshold=false
 volume_threshold_multiplier=2.0
 excessive_threshold_multiplier=3.0
 log_level=WARN
+selected_device_id=
 ```
 
 * `address` and `port` are the address and port of the OSC server you're sending to (VRChat)
@@ -93,6 +94,7 @@ log_level=WARN
 * `volume_threshold_multiplier` sets how many standard deviations above mean for auto volume threshold
 * `excessive_threshold_multiplier` sets how many standard deviations above mean for auto excessive threshold
 * `log_level` sets the logging verbosity (DEBUG, INFO, WARN, or ERROR)
+* `selected_device_id` is the ID of the audio device to capture from. If not set, the default device will be used.
 
 All these parameters can be adjusted in real-time through the UI, and saved to the config file.
 
@@ -131,9 +133,11 @@ For Avatar prefabs, visit [foxipso.com](http://foxipso.com) or [foxipso.gumroad.
 
 ## 📅 Version History 
 
-### 1.3 - Logging 
+### 1.3 - Logging, VoiceMeeter support, device selection
 - Added logging (%appdata%/EarPerkOSC/EarPerkOSC.log)
 - Bugfix where systems that don't support 96 kHz would crash
+- Capture device selection and refresh
+- VoiceMeeter support (allows selecting VoiceMeeter output devices, e.g., A1, B1)
 
 ### 1.2 - Stability 
 - Fixed issue where config settings weren't saved if the installation dir was system-owned

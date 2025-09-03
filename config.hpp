@@ -19,6 +19,9 @@ struct Config {
     float excessive_volume_threshold;
     int reset_timeout_ms;
     int timeout_ms;
+    
+    // Audio device selection
+    std::string selected_device_id;
 
     // Default constructor with reasonable defaults
     Config();

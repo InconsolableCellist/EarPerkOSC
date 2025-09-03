@@ -20,6 +20,9 @@ AudioProcessor::AudioProcessor(Config& config)
     , overwhelmingly_loud(false)
     , current_left_vol(0.0f)
     , current_right_vol(0.0f)
+    , currentDeviceId("")
+    , currentDeviceName("No Device")
+    , currentDeviceIsRender(true)
 {
     LOG_DEBUG("AudioProcessor constructor called");
     last_left_message_timestamp = std::chrono::steady_clock::now();
@@ -79,13 +82,75 @@ bool AudioProcessor::Initialize() {
     }
     LOG_DEBUG("MMDeviceEnumerator created successfully");
 
-    LOG_DEBUG("Getting default audio endpoint");
-    hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
-    if (FAILED(hr)) {
-        LOG_ERROR_F("Failed to get default audio endpoint: 0x%08X", hr);
-        return false;
+    // Use selected device if specified, otherwise use default
+    if (!config.selected_device_id.empty()) {
+        LOG_DEBUG_F("Getting selected audio device: %s", config.selected_device_id.c_str());
+        
+        // Convert string to wide string for Windows API
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, config.selected_device_id.c_str(), -1, NULL, 0);
+        std::wstring wide_device_id(size_needed, 0);
+        MultiByteToWideChar(CP_UTF8, 0, config.selected_device_id.c_str(), -1, &wide_device_id[0], size_needed);
+        wide_device_id.resize(size_needed - 1);  // Remove null terminator
+        
+        hr = pEnumerator->GetDevice(wide_device_id.c_str(), &pDevice);
+        if (FAILED(hr)) {
+            LOG_WARN_F("Failed to get selected audio device (0x%08X), falling back to default", hr);
+            hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+            if (FAILED(hr)) {
+                LOG_ERROR_F("Failed to get default audio endpoint: 0x%08X", hr);
+                return false;
+            }
+            LOG_DEBUG("Fallback to default audio endpoint successful");
+            currentDeviceIsRender = true;  // Default endpoint is always a render device
+        } else {
+            LOG_DEBUG("Selected audio device acquired successfully");
+        }
+    } else {
+        LOG_DEBUG("Getting default audio endpoint");
+        hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+        if (FAILED(hr)) {
+            LOG_ERROR_F("Failed to get default audio endpoint: 0x%08X", hr);
+            return false;
+        }
+        LOG_DEBUG("Default audio endpoint acquired successfully");
+        currentDeviceIsRender = true;  // Default endpoint is always a render device
     }
-    LOG_DEBUG("Default audio endpoint acquired successfully");
+    
+    // Store current device info for UI
+    LPWSTR deviceId = nullptr;
+    hr = pDevice->GetId(&deviceId);
+    if (SUCCEEDED(hr)) {
+        int id_size_needed = WideCharToMultiByte(CP_UTF8, 0, deviceId, -1, NULL, 0, NULL, NULL);
+        std::string deviceIdStr(id_size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, deviceId, -1, &deviceIdStr[0], id_size_needed, NULL, NULL);
+        currentDeviceId = deviceIdStr.c_str();  // Remove null terminator
+        
+        // Get device name
+        IPropertyStore* pPropertyStore = nullptr;
+        hr = pDevice->OpenPropertyStore(STGM_READ, &pPropertyStore);
+        if (SUCCEEDED(hr)) {
+            PROPVARIANT friendlyName;
+            PropVariantInit(&friendlyName);
+            hr = pPropertyStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
+            
+            if (SUCCEEDED(hr) && friendlyName.vt == VT_LPWSTR) {
+                int name_size_needed = WideCharToMultiByte(CP_UTF8, 0, friendlyName.pwszVal, -1, NULL, 0, NULL, NULL);
+                std::string temp(name_size_needed, 0);
+                WideCharToMultiByte(CP_UTF8, 0, friendlyName.pwszVal, -1, &temp[0], name_size_needed, NULL, NULL);
+                currentDeviceName = temp.c_str();  // Remove null terminator
+            }
+            
+            PropVariantClear(&friendlyName);
+            pPropertyStore->Release();
+        }
+        
+        if (currentDeviceName.empty()) {
+            currentDeviceName = "Unknown Device";
+        }
+        
+        CoTaskMemFree(deviceId);
+        LOG_DEBUG_F("Using audio device: %s", currentDeviceName.c_str());
+    }
 
     LOG_DEBUG("Activating audio client");
     hr = pDevice->Activate(__uuidof(IAudioClient), CLSCTX_ALL,
@@ -96,6 +161,9 @@ bool AudioProcessor::Initialize() {
     }
     LOG_DEBUG("Audio client activated successfully");
 
+    bool isRenderDevice = currentDeviceIsRender;
+    LOG_DEBUG_F("Using stored device type: isRenderDevice=%s", isRenderDevice ? "true" : "false");
+
     LOG_DEBUG("Getting audio mix format");
     hr = pAudioClient->GetMixFormat(&pwfx);
     if (FAILED(hr)) {
@@ -104,15 +172,45 @@ bool AudioProcessor::Initialize() {
     }
     LOG_DEBUG_F("Audio format: %d channels, %d Hz, %d bits", pwfx->nChannels, pwfx->nSamplesPerSec, pwfx->wBitsPerSample);
 
-    // Try to initialize with the mix format first
-    LOG_DEBUG("Initializing audio client for loopback capture");
+    DWORD streamFlags = 0;
+    
+    bool isVoiceMeeterDevice = (currentDeviceName.find("VoiceMeeter") != std::string::npos ||
+                                currentDeviceName.find("VAIO") != std::string::npos ||
+                                currentDeviceName.find("VB-Audio") != std::string::npos);
+    
+    if (isVoiceMeeterDevice) {
+        streamFlags = 0;
+        LOG_DEBUG("VoiceMeeter device detected - using direct capture (no loopback)");
+    } else {
+        streamFlags = isRenderDevice ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0;
+    }
+    
+    LOG_DEBUG_F("Initializing audio client with flags: 0x%08X (isRenderDevice=%s, isVoiceMeeter=%s)", 
+                streamFlags, isRenderDevice ? "true" : "false", isVoiceMeeterDevice ? "true" : "false");
+    
     hr = pAudioClient->Initialize(
         AUDCLNT_SHAREMODE_SHARED,
-        AUDCLNT_STREAMFLAGS_LOOPBACK,
+        streamFlags,
         BUFFER_DURATION,
         0,
         pwfx,
         nullptr);
+        
+    // Handle device in use error by trying with different buffer settings
+    if (hr == AUDCLNT_E_DEVICE_IN_USE) {
+        LOG_DEBUG("Device in use, trying with auto buffer duration");
+        hr = pAudioClient->Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            streamFlags,
+            0,  // Let Windows choose buffer duration
+            0,
+            pwfx,
+            nullptr);
+            
+        if (SUCCEEDED(hr)) {
+            LOG_DEBUG("Successfully initialized with auto buffer duration");
+        }
+    }
         
     // If the mix format is not supported, try fallback formats
     if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
@@ -163,11 +261,23 @@ bool AudioProcessor::Initialize() {
                 // Format is supported exactly, try to initialize
                 hr = pAudioClient->Initialize(
                     AUDCLNT_SHAREMODE_SHARED,
-                    AUDCLNT_STREAMFLAGS_LOOPBACK,
+                    streamFlags,
                     BUFFER_DURATION,
                     0,
                     pwfx,
                     nullptr);
+                    
+                // If device is in use, try with auto buffer duration
+                if (hr == AUDCLNT_E_DEVICE_IN_USE) {
+                    LOG_DEBUG("Device in use with fallback format, trying auto buffer duration");
+                    hr = pAudioClient->Initialize(
+                        AUDCLNT_SHAREMODE_SHARED,
+                        streamFlags,
+                        0,  // Let Windows choose buffer duration
+                        0,
+                        pwfx,
+                        nullptr);
+                }
                     
                 if (SUCCEEDED(hr)) {
                     LOG_DEBUG_F("Successfully initialized with fallback format: %d channels, %d Hz, %d bits", 
@@ -186,11 +296,23 @@ bool AudioProcessor::Initialize() {
                 
                 hr = pAudioClient->Initialize(
                     AUDCLNT_SHAREMODE_SHARED,
-                    AUDCLNT_STREAMFLAGS_LOOPBACK,
+                    streamFlags,
                     BUFFER_DURATION,
                     0,
                     pwfx,
                     nullptr);
+                    
+                // If device is in use, try with auto buffer duration
+                if (hr == AUDCLNT_E_DEVICE_IN_USE) {
+                    LOG_DEBUG("Device in use with closest match format, trying auto buffer duration");
+                    hr = pAudioClient->Initialize(
+                        AUDCLNT_SHAREMODE_SHARED,
+                        streamFlags,
+                        0,  // Let Windows choose buffer duration
+                        0,
+                        pwfx,
+                        nullptr);
+                }
                     
                 if (SUCCEEDED(hr)) {
                     LOG_DEBUG_F("Successfully initialized with closest match format: %d channels, %d Hz, %d bits", 
@@ -215,7 +337,14 @@ bool AudioProcessor::Initialize() {
             return false;
         }
     } else if (FAILED(hr)) {
-        LOG_ERROR_F("Failed to initialize audio client: 0x%08X", hr);
+        if (hr == AUDCLNT_E_DEVICE_IN_USE) {
+            LOG_ERROR("Audio device is in use by another application. Please check:");
+            LOG_ERROR("1. Close other audio applications that might be using exclusive mode");
+            LOG_ERROR("2. Disable exclusive mode in Sound settings > Device Properties > Advanced");
+            LOG_ERROR("3. Disable audio enhancement software (e.g., Nahimic, Sonic Studio)");
+        } else {
+            LOG_ERROR_F("Failed to initialize audio client: 0x%08X", hr);
+        }
         return false;
     }
     LOG_DEBUG("Audio client initialized successfully");
@@ -294,10 +423,18 @@ bool AudioProcessor::CheckDeviceStatus() {
     DWORD state;
     HRESULT hr = pDevice->GetState(&state);
     if (FAILED(hr) || state != DEVICE_STATE_ACTIVE) {
+        LOG_DEBUG("Current audio device is no longer active");
         return false;
     }
     
-    // Check if current device is still the default
+    // If we have a specific selected device, only check if it's still active
+    // Don't check if it's still the default - we want to stick with the selected device
+    if (!config.selected_device_id.empty()) {
+        LOG_DEBUG("Using selected device - skipping default device check");
+        return true;
+    }
+    
+    // Only check for default device changes if we're using the default device
     IMMDevice* pCurrentDefault = nullptr;
     hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pCurrentDefault);
     if (SUCCEEDED(hr) && pCurrentDefault) {
@@ -317,7 +454,7 @@ bool AudioProcessor::CheckDeviceStatus() {
         pCurrentDefault->Release();
         
         if (!isStillDefault) {
-            std::cout << "Default audio device has changed, marking for reconnection..." << std::endl;
+            LOG_DEBUG("Default audio device changed, marking for reconnection");
             return false;
         }
     }
@@ -491,6 +628,145 @@ void AudioProcessor::ProcessAudio() {
             ProcessVolPerkAndReset(left_avg, right_avg);
         }
     }
+}
+
+std::vector<AudioProcessor::AudioDevice> AudioProcessor::GetAvailableDevices() {
+    std::vector<AudioDevice> devices;
+    
+    IMMDeviceEnumerator* pTempEnumerator = nullptr;
+    IMMDeviceCollection* pCollection = nullptr;
+    
+    HRESULT hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator), (void**)&pTempEnumerator);
+    
+    if (FAILED(hr)) {
+        LOG_ERROR_F("Failed to create device enumerator for listing: 0x%08X", hr);
+        return devices;
+    }
+    
+    // Get default device to mark it
+    IMMDevice* pDefaultDevice = nullptr;
+    LPWSTR defaultDeviceId = nullptr;
+    hr = pTempEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDefaultDevice);
+    if (SUCCEEDED(hr)) {
+        pDefaultDevice->GetId(&defaultDeviceId);
+    }
+    
+    // Enumerate both render and capture devices for comprehensive device list
+    EDataFlow dataFlows[] = { eRender, eCapture };
+    const char* flowNames[] = { "Render", "Capture" };
+    
+    for (int flowIndex = 0; flowIndex < 2; flowIndex++) {
+        EDataFlow dataFlow = dataFlows[flowIndex];
+        
+        hr = pTempEnumerator->EnumAudioEndpoints(dataFlow, DEVICE_STATE_ACTIVE, &pCollection);
+        if (SUCCEEDED(hr)) {
+            UINT deviceCount = 0;
+            hr = pCollection->GetCount(&deviceCount);
+            
+            if (SUCCEEDED(hr)) {
+                for (UINT i = 0; i < deviceCount; i++) {
+                IMMDevice* pDevice = nullptr;
+                hr = pCollection->Item(i, &pDevice);
+                
+                if (SUCCEEDED(hr)) {
+                    LPWSTR deviceId = nullptr;
+                    hr = pDevice->GetId(&deviceId);
+                    
+                    if (SUCCEEDED(hr)) {
+                        // Get device friendly name
+                        IPropertyStore* pPropertyStore = nullptr;
+                        hr = pDevice->OpenPropertyStore(STGM_READ, &pPropertyStore);
+                        
+                        std::string deviceName = "Unknown Device";
+                        if (SUCCEEDED(hr)) {
+                            PROPVARIANT friendlyName;
+                            PropVariantInit(&friendlyName);
+                            hr = pPropertyStore->GetValue(PKEY_Device_FriendlyName, &friendlyName);
+                            
+                            if (SUCCEEDED(hr) && friendlyName.vt == VT_LPWSTR) {
+                                // Convert wide string to regular string
+                                int size_needed = WideCharToMultiByte(CP_UTF8, 0, friendlyName.pwszVal, -1, NULL, 0, NULL, NULL);
+                                std::string temp(size_needed, 0);
+                                WideCharToMultiByte(CP_UTF8, 0, friendlyName.pwszVal, -1, &temp[0], size_needed, NULL, NULL);
+                                deviceName = temp.c_str();  // Remove null terminator
+                            }
+                            
+                            PropVariantClear(&friendlyName);
+                            pPropertyStore->Release();
+                        }
+                        
+                        // Convert device ID to string
+                        int id_size_needed = WideCharToMultiByte(CP_UTF8, 0, deviceId, -1, NULL, 0, NULL, NULL);
+                        std::string deviceIdStr(id_size_needed, 0);
+                        WideCharToMultiByte(CP_UTF8, 0, deviceId, -1, &deviceIdStr[0], id_size_needed, NULL, NULL);
+                        deviceIdStr = deviceIdStr.c_str();  // Remove null terminator
+                        
+                        bool isDefault = false;
+                        if (defaultDeviceId) {
+                            isDefault = (wcscmp(deviceId, defaultDeviceId) == 0);
+                        }
+                        
+                        // Add helpful identification for VoiceMeeter devices and device type
+                        std::string deviceTypeLabel = (dataFlow == eRender) ? " (Output)" : " (Input)";
+                        
+                        if (deviceName.find("VoiceMeeter") != std::string::npos || 
+                            deviceName.find("VAIO") != std::string::npos ||
+                            deviceName.find("VB-Audio") != std::string::npos) {
+                            deviceName += " [VoiceMeeter Virtual Device]";
+                        }
+                        
+                        deviceName += deviceTypeLabel;
+                        
+                        bool isRenderDevice = (dataFlow == eRender);
+                        devices.push_back({deviceIdStr, deviceName, isDefault, isRenderDevice});
+                        
+                        CoTaskMemFree(deviceId);
+                    }
+                    
+                    pDevice->Release();
+                }
+            }
+        }
+        
+        pCollection->Release();
+        pCollection = nullptr;
+    }
+    } // End dataFlow loop
+    
+    if (defaultDeviceId) CoTaskMemFree(defaultDeviceId);
+    if (pDefaultDevice) pDefaultDevice->Release();
+    pTempEnumerator->Release();
+    
+    return devices;
+}
+
+bool AudioProcessor::SetSelectedDevice(const std::string& deviceId) {
+    LOG_DEBUG_F("Setting selected device ID to: '%s'", deviceId.c_str());
+    
+    // Find the device in our available devices list to get its type
+    auto devices = GetAvailableDevices();
+    for (const auto& device : devices) {
+        if (device.id == deviceId) {
+            currentDeviceIsRender = device.isRenderDevice;
+            LOG_DEBUG_F("Device type: isRenderDevice=%s", currentDeviceIsRender ? "true" : "false");
+            break;
+        }
+    }
+    
+    config.selected_device_id = deviceId;
+    
+    // Restart audio with new device
+    return RestartAudio();
+}
+
+std::string AudioProcessor::GetCurrentDeviceId() const {
+    return currentDeviceId;
+}
+
+std::string AudioProcessor::GetCurrentDeviceName() const {
+    return currentDeviceName;
 }
 
 std::pair<float, float> AudioProcessor::CalculateAvgLR() {

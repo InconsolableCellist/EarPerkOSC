@@ -38,6 +38,7 @@ Config::Config()
     , volume_threshold_multiplier(2.0f)  // 2 standard deviations above mean
     , excessive_threshold_multiplier(3.0f)  // 3 standard deviations above mean
     , log_level(LogLevel::LWARN)  // Default to WARN level
+    , selected_device_id("")  // Empty means use default device
 {
 }
 
@@ -90,6 +91,7 @@ bool Config::CreateDefaultConfigFile(const std::string& filename) {
         << "auto_excessive_threshold=false\n"
         << "volume_threshold_multiplier=2.0\n"
         << "excessive_threshold_multiplier=3.0\n"
+        << "selected_device_id=\n"
         << "log_level=WARN\n";
 
     return true;
@@ -139,6 +141,9 @@ bool Config::LoadFromFile(const std::string& filename) {
     auto_excessive_threshold = reader.GetBoolean("audio", "auto_excessive_threshold", auto_excessive_threshold);
     volume_threshold_multiplier = reader.GetFloat("audio", "volume_threshold_multiplier", volume_threshold_multiplier);
     excessive_threshold_multiplier = reader.GetFloat("audio", "excessive_threshold_multiplier", excessive_threshold_multiplier);
+    selected_device_id = reader.Get("audio", "selected_device_id", selected_device_id);
+    
+    LOG_DEBUG_F("Config loaded - selected_device_id: '%s'", selected_device_id.c_str());
 
     // Load log level safely
     try {
@@ -185,7 +190,10 @@ bool Config::SaveToFile(const std::string& filename) const {
         << "auto_excessive_threshold=" << (auto_excessive_threshold ? "true" : "false") << "\n"
         << "volume_threshold_multiplier=" << volume_threshold_multiplier << "\n"
         << "excessive_threshold_multiplier=" << excessive_threshold_multiplier << "\n"
+        << "selected_device_id=" << selected_device_id << "\n"
         << "log_level=" << LogLevelToString(log_level) << "\n";
+        
+    LOG_DEBUG_F("Config saved - selected_device_id: '%s'", selected_device_id.c_str());
 
     return true;
 }
